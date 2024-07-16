@@ -1,0 +1,6 @@
+streamlit
+pandas
+duckdb
+openpyxl
+pyarrow
+avro
