@@ -169,7 +169,6 @@ def df_to_file(df, file_format, **kwargs):
     """
     buffer = io.BytesIO()
     
-    #st.session_state.download_options = True
     try:
         if file_format == 'csv':
             try:
@@ -191,7 +190,7 @@ def df_to_file(df, file_format, **kwargs):
         else:
             raise ValueError(f"Unsupported file format: {file_format}")
     except Exception as e:
-        raise ValueError(f"{file_format} writing error: {e}")
+        st.warning(f"{file_format} export not available for your data.  \nPlease select a different format.")
     
     buffer.seek(0)
     return buffer.getvalue()
@@ -219,9 +218,6 @@ def main():
         st.session_state.uploaded_files = []
     if 'edited_df' not in st.session_state:
         st.session_state.edited_df = None
-    #if 'download_options' not in st.session_state:
-    #    st.session_state.download_options = False
-
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True)
 
@@ -315,8 +311,7 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                #with st.expander("Data Download", expanded=st.session_state.download_options):
-                with st.expander("Data Download", expanded=False):
+                with st.popover("Data Download"):
                     # File format selection
                     file_formats = ['csv', 'excel', 'json', 'parquet', 'xml']
                     selected_format = st.selectbox("Select file format:", file_formats)
@@ -330,14 +325,14 @@ def main():
                             'QUOTE_NONNUMERIC': csv.QUOTE_NONNUMERIC,
                             'QUOTE_NONE': csv.QUOTE_NONE
                         }
-                        quoting = st.selectbox("Quoting:", list(quoting_options.keys()))
-                        
+                        quoting = st.selectbox("Quoting:", list(quoting_options.keys()))                    
                         
                         file_content = df_to_file(st.session_state.query_result, 'csv', 
-                                                sep=delimiter, quoting=quoting_options[quoting])    
+                                                sep=delimiter, quoting=quoting_options[quoting])
                     else:
                         file_content = df_to_file(st.session_state.query_result, selected_format)
                     
+
                     # Generate file name and MIME type
                     file_extension = 'xlsx' if selected_format == 'excel' else selected_format
                     file_name = f"query_result.{file_extension}"
