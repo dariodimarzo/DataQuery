@@ -291,7 +291,12 @@ def main():
                         st.session_state.query_result = result_df
                         st.success("Query executed successfully!")
                     except Exception as e:
-                        st.error(f"Error executing query: {str(e)}")
+                        if "Catalog Error: Table with name" in str(e):
+                            st.error("Table not existing. Please check table names in your query.")
+                        elif "Can only update base table" in str(e):
+                            st.error("Update not available. Please consider a different select statement and the edit mode.")
+                        else:
+                            st.error(f"Error executing query: {str(e)}")
                 else:
                     st.warning("Please enter a SQL query.")         
 

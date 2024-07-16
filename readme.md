@@ -4,6 +4,8 @@ DataQuery is a web app to upload data files for preview, query, edit and export 
 
 DataQuery provides a Stremlit based Web UI and a SQL Engine using DuckDb.
 
+App is available on Streamlit [here](https://dataquery.streamlit.app/)
+
 ## Features
 
 - Load files of various formats (Csv, Txt, Xlsx, Parquet, Avro, Json, Xml..). Files can be loaded also as zip archives.
