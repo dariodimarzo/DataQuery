@@ -14,6 +14,8 @@ App is available on Streamlit [here](https://dataquery.streamlit.app/)
 - Visual editing of the query results
 - Export query results on file, in various format (Csv, Xlsx, Parquet, Json, Xml)
 
+All the tasks are managed in memory, no data are saved on the server.
+
 ## Installation
 
 To install the required dependencies, you can use `pip`:
@@ -24,7 +26,7 @@ pip install -r requirements.txt
 
 ## Run
 
-To run the the app you can use Streamlit
+To run the the app you can use `streamlit`:
 
 ```sh
 streamlit run dataquery.py

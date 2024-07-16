@@ -219,6 +219,8 @@ def main():
         st.session_state.uploaded_files = []
     if 'edited_df' not in st.session_state:
         st.session_state.edited_df = None
+    if 'export_df' not in st.session_state:
+        st.session_state.export_df=None
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True)
 
@@ -304,12 +306,17 @@ def main():
             edit_mode = st.toggle("Edit Mode")
             if edit_mode:
                 st.session_state.edited_df = st.data_editor(st.session_state.query_result, num_rows="dynamic")
-                #st.session_state.query_result = edited_df
             else:
                 if st.session_state.edited_df is not None:
                     st.session_state.query_result=st.session_state.edited_df.copy()
                 st.dataframe(st.session_state.query_result)
             
+            #Prepare dataframe for export data
+            if st.session_state.edited_df is not None:
+                st.session_state.export_df=st.session_state.edited_df.copy()
+            else:
+                st.session_state.export_df=st.session_state.query_result.copy()
+
             col1, col2 = st.columns(2)
             with col1:
                 with st.popover("Data Download"):
@@ -328,10 +335,10 @@ def main():
                         }
                         quoting = st.selectbox("Quoting:", list(quoting_options.keys()))                    
                         
-                        file_content = df_to_file(st.session_state.query_result, 'csv', 
+                        file_content = df_to_file(st.session_state.export_df, 'csv', 
                                                 sep=delimiter, quoting=quoting_options[quoting])
                     else:
-                        file_content = df_to_file(st.session_state.query_result, selected_format)
+                        file_content = df_to_file(st.session_state.export_df, selected_format)
                     
 
                     # Generate file name and MIME type
@@ -356,6 +363,7 @@ def main():
     else:
         st.session_state.tables = {}
         st.session_state.query_result = None
+        st.session_state.export_df= None
 
 if __name__ == "__main__":
     main()
