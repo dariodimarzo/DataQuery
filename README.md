@@ -1,6 +1,6 @@
 # DataQuery
 
-DataQuery is a web app to upload data files for preview, query, edit and export data.
+DataQuery is a web app for preview, query, edit and export data files.
 
 DataQuery provides a Stremlit based Web UI and a SQL Engine using DuckDb.
 
@@ -18,7 +18,7 @@ All the tasks are managed in memory, no data are saved on the server.
 
 ## Installation
 
-To install the required dependencies, you can use `pip`:
+To install the required dependencies you can use `pip`:
 
 ```sh
 pip install -r requirements.txt
