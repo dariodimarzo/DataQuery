@@ -204,6 +204,7 @@ def main():
     It also provides options for editing and downloading query results.
     """
 
+    st.set_page_config(page_title='DataQuery', page_icon=':wavy_dash:', layout="centered")
     st.title("DataQuery")
     st.subheader("Preview, query, edit and export data files")
 
