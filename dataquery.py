@@ -169,7 +169,7 @@ def df_to_file(df, file_format, **kwargs):
     """
     buffer = io.BytesIO()
     
-    st.session_state.download_options = True
+    #st.session_state.download_options = True
     try:
         if file_format == 'csv':
             try:
@@ -219,8 +219,8 @@ def main():
         st.session_state.uploaded_files = []
     if 'edited_df' not in st.session_state:
         st.session_state.edited_df = None
-    if 'download_options' not in st.session_state:
-        st.session_state.download_options = False
+    #if 'download_options' not in st.session_state:
+    #    st.session_state.download_options = False
 
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True)
@@ -308,7 +308,8 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                with st.expander("Data Download", expanded=st.session_state.download_options):
+                #with st.expander("Data Download", expanded=st.session_state.download_options):
+                with st.expander("Data Download", expanded=False):
                     # File format selection
                     file_formats = ['csv', 'excel', 'json', 'parquet', 'xml']
                     selected_format = st.selectbox("Select file format:", file_formats)
@@ -349,7 +350,6 @@ def main():
                         file_name=file_name,
                         mime=mime_type,
                     )
-
     else:
         st.session_state.tables = {}
         st.session_state.query_result = None
