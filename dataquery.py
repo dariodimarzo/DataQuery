@@ -231,7 +231,7 @@ def main():
         for table in tables_to_remove:
             remove_view(st.session_state.con, table)
             del st.session_state.tables[table]
-            st.warning(f"Removed file: {file.name} and its associated tables")
+        st.warning(f"Removed file: {file.name} and its associated tables")
 
     # Update the list of uploaded files
     st.session_state.uploaded_files = uploaded_files
@@ -251,14 +251,14 @@ def main():
                                 if loaded_tables:
                                     for table in loaded_tables:
                                         st.session_state.tables[table] = extracted_file.name
-                                        loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
+                                    loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
                                         #st.success(f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}")                           
                 else:
                     loaded_tables = load_file(file, st.session_state.con)
                     if loaded_tables:
                         for table in loaded_tables:
                             st.session_state.tables[table] = file.name
-                            loaded_tab += f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}  \n"
+                        loaded_tab += f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}  \n"
                             #st.success(f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}")
 
         st.success(loaded_tab)
