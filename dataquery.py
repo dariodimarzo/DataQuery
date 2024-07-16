@@ -222,7 +222,8 @@ def main():
     if 'export_df' not in st.session_state:
         st.session_state.export_df=None
 
-    uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True,
+        help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.')
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]
