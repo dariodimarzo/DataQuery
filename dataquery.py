@@ -121,7 +121,7 @@ def run_query(con, sql_query):
     result = con.execute(sql_query).fetchdf()
     return result
 
-
+@st.cache_data
 def preview_data(con, table_name, num_rows=5):
     """
     Preview the data for a given table.
@@ -154,7 +154,7 @@ def remove_view(con, view_name):
         st.warning(f"Could not drop view {view_name}: {str(e)}")
 
 
-
+@st.cache_data
 def df_to_file(df, file_format, **kwargs):
     """
     Convert DataFrame to various file formats.
@@ -291,7 +291,10 @@ def main():
                         st.session_state.query_result = result_df
                         st.success("Query executed successfully!")
                     except Exception as e:
-                        st.error(f"Error executing query: {str(e)}")
+                        if "Catalog Error: Table with name" in str(e):
+                            st.error("Table not exists. Check table names in your query.")
+                        else:
+                            st.error(f"Error executing query: {str(e)}")
                 else:
                     st.warning("Please enter a SQL query.")         
 
@@ -355,6 +358,7 @@ def main():
     else:
         st.session_state.tables = {}
         st.session_state.query_result = None
+        st.cache_data.clear()
 
 if __name__ == "__main__":
     main()
