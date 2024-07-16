@@ -283,6 +283,8 @@ def main():
             if st.button("Run Query"):
                 if sql_query:
                     try:
+                        st.session_state.query_result=None
+                        st.session_state.edited_df=None
                         result_df = run_query(st.session_state.con, sql_query)
                         # Reset index to start from 1 for query results as well
                         result_df.index = range(1, len(result_df) + 1)
