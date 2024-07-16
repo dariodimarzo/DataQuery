@@ -326,6 +326,7 @@ def main():
                     
                     # Delimiter and quoting options (for CSV)
                     if selected_format == 'csv':
+                        header = st.selectbox("Header:",("Y", "N"))
                         delimiter = st.text_input("Delimiter:", max_chars=1, value=",")
                         quoting_options = {
                             'QUOTE_ALL': csv.QUOTE_ALL,
@@ -334,9 +335,14 @@ def main():
                             'QUOTE_NONE': csv.QUOTE_NONE
                         }
                         quoting = st.selectbox("Quoting:", list(quoting_options.keys()))                    
-                        
+                        head=True if header == 'Y' else False
+
                         file_content = df_to_file(st.session_state.export_df, 'csv', 
-                                                sep=delimiter, quoting=quoting_options[quoting])
+                                                sep=delimiter, quoting=quoting_options[quoting],header=head)
+                    elif selected_format =='excel':
+                        header = st.selectbox("Header:",("Y", "N"))
+                        head=True if header == 'Y' else False
+                        file_content = df_to_file(st.session_state.export_df, 'excel',header=head)
                     else:
                         file_content = df_to_file(st.session_state.export_df, selected_format)
                     
