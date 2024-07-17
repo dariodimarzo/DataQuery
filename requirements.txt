@@ -4,3 +4,4 @@ duckdb
 openpyxl
 pyarrow
 avro
+lxml

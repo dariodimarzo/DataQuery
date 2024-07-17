@@ -11,6 +11,7 @@ from avro.io import DatumReader
 #from typing import List, Optional
 import zipfile
 import csv
+import lxml
 
 
 def load_file(file, con):
@@ -261,8 +262,9 @@ def main():
                             st.session_state.tables[table] = file.name
                         loaded_tab += f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}  \n"
                             #st.success(f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}")
-
-        st.success(loaded_tab)
+        
+        if loaded_tab != "":
+            st.success(loaded_tab)
        
 
         # Collapsible Data Preview
