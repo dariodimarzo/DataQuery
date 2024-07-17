@@ -190,7 +190,7 @@ def df_to_file(df, file_format, **kwargs):
                     st.warning("Special character found in the data.  \nPlease select a different quoting option.")
                 else:
                     raise ValueError(f"{file_format} writing error: {e}")
-        elif file_format == 'excel':
+        elif file_format == 'xlsx':
             df.to_excel(buffer, index=False, engine='openpyxl', **kwargs)
         elif file_format == 'json':
             df.to_json(buffer, orient='records', **kwargs)
@@ -238,7 +238,7 @@ def main():
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True,
         help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.',
-        type=['csv', 'txt', 'xlsx', 'json', 'parquet', 'xml','avro','zip'])
+        type=['avro','csv', 'json','parquet','txt', 'xlsx', 'xml','zip'])
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]
@@ -338,7 +338,7 @@ def main():
             with col1:
                 with st.popover("Data Download"):
                     # File format selection
-                    file_formats = ['csv', 'txt', 'excel', 'json', 'parquet', 'xml','avro']
+                    file_formats = ['avro','csv','json','parquet','txt', 'xlsx','xml']
                     selected_format = st.selectbox("Select file format:", file_formats)
                     
                     # Delimiter and quoting options (for CSV)
@@ -356,7 +356,7 @@ def main():
 
                         file_content = df_to_file(st.session_state.export_df, selected_format, 
                                                 sep=delimiter, quoting=quoting_options[quoting],header=head)
-                    elif selected_format =='excel':
+                    elif selected_format =='xlsx':
                         header = st.selectbox("Header:",("Y", "N"))
                         head=True if header == 'Y' else False
                         file_content = df_to_file(st.session_state.export_df, selected_format,header=head)
@@ -365,11 +365,10 @@ def main():
                     
 
                     # Generate file name and MIME type
-                    file_extension = 'xlsx' if selected_format == 'excel' else selected_format
-                    file_name = f"query_result.{file_extension}"
+                    file_name = f"query_result.{selected_format}"
                     mime_types = {
                         'csv': 'text/csv',
-                        'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                         'json': 'application/json',
                         'parquet': 'application/octet-stream',
                         'xml': 'application/xml'
