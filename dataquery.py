@@ -12,6 +12,7 @@ from avro.io import DatumReader
 import zipfile
 import csv
 import lxml
+import html5lib
 
 
 def load_file(file, con):

@@ -6,3 +6,4 @@ pyarrow
 avro
 lxml
 python-snappy
+html5lib
