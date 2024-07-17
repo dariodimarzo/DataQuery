@@ -3,8 +3,6 @@ pandas
 duckdb
 openpyxl
 pyarrow
-avro
 lxml
 python-snappy
-html5lib
-beautifulsoup4
+pandavro

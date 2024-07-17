@@ -8,11 +8,11 @@ App is available on Streamlit [here](https://dataquery.streamlit.app/)
 
 ## Features
 
-- Load files of various formats (Csv, Txt, Xlsx, Parquet, Avro, Json, Xml..). Files can be loaded also as zip archives.
+- Load files of various formats (csv, txt, xlsx, parquet, avro, json, xml). Files can be loaded also as zip archives.
 - Preview data of every file loaded (in case of xlsx file, every sheet will be avaiable)
 - Query loaded data in sql language
 - Visual editing of the query results
-- Export query results on file, in various format (Csv, Xlsx, Parquet, Json, Xml)
+- Export query results on file, in various format (csv, txt, xlsx, parquet, avro, json, xml)
 
 All the tasks are managed in memory, no data are saved on the server.
 

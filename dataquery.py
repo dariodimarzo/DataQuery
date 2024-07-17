@@ -5,19 +5,14 @@ import io
 import base64
 import re
 import os
-#manage avro files
-import avro.schema
-from avro.datafile import DataFileReader
-from avro.io import DatumReader
 #manage zip files
 import zipfile
 #manage csv
 import csv
 #manage xml
 import lxml
-#manage html
-import html5lib
-import beautifulsoup4
+#manage avro
+import pandavro as pdx
 
 
 def load_file(file, con):
@@ -63,17 +58,27 @@ def load_file(file, con):
         elif file_extension == 'parquet':
             df = pd.read_parquet(file)
             table_names.append(register_dataframe(con, df, file_nm))
-        elif file_extension == 'avro':
-            avro_reader = DataFileReader(file, DatumReader())
-            df = pd.DataFrame.from_records([r for r in avro_reader])
+        #elif file_extension == 'avro':
+        #    avro_reader = DataFileReader(file, DatumReader())
+        #    df = pd.DataFrame.from_records([r for r in avro_reader])
+        #    table_names.append(register_dataframe(con, df, file_nm))
+        elif file_extension=='avro':
+            df=pdx.read_avro(file, na_dtypes=True)
             table_names.append(register_dataframe(con, df, file_nm))
-        elif file_extension in ['json', 'html', 'xml', 'hdf', 'feather', 'pickle', 'sas', 'stata', 'spss']:
-            read_func = getattr(pd, f'read_{file_extension}')
-            df = read_func(file)
+        elif file_extension=='json':
+            # Read the JSON file
+            json_data = pd.read_json(file)            
+            # If the JSON is nested, normalize it
+            if isinstance(json_data, pd.Series):
+                df = pd.json_normalize(json_data.to_dict())
+            else:
+                df = pd.json_normalize(json_data.to_dict('records'))
+            table_names.append(register_dataframe(con, df, file_nm))
+        elif file_extension == 'xml':            
+            df = pd.read_xml(file)
             table_names.append(register_dataframe(con, df, file_nm))
         else:
-            raise ValueError(f"Unsupported file format: {file_extension}")
-
+            st.error(f"Unsupported file format: {file_extension}")
         return table_names
     except Exception as e:
         st.error(f"Error loading file {file.name}: {str(e)}")
@@ -177,7 +182,7 @@ def df_to_file(df, file_format, **kwargs):
     buffer = io.BytesIO()
     
     try:
-        if file_format == 'csv':
+        if file_format in ['csv','txt']:
             try:
                 df.to_csv(buffer, index=False, **kwargs)
             except csv.Error as e:
@@ -194,9 +199,12 @@ def df_to_file(df, file_format, **kwargs):
             df.to_parquet(buffer, index=False, engine='pyarrow', **kwargs)   
         elif file_format == 'xml':
             df.to_xml(buffer, index=False, **kwargs)
+        elif file_format == 'avro':
+            pdx.to_avro(buffer, df)
         else:
             raise ValueError(f"Unsupported file format: {file_format}")
     except Exception as e:
+        st.error(e)
         st.warning(f"{file_format} export not available for your data.  \nPlease select a different format.")
     
     buffer.seek(0)
@@ -330,11 +338,11 @@ def main():
             with col1:
                 with st.popover("Data Download"):
                     # File format selection
-                    file_formats = ['csv', 'excel', 'json', 'parquet', 'xml']
+                    file_formats = ['csv', 'txt', 'excel', 'json', 'parquet', 'xml','avro']
                     selected_format = st.selectbox("Select file format:", file_formats)
                     
                     # Delimiter and quoting options (for CSV)
-                    if selected_format == 'csv':
+                    if selected_format in ['csv','txt']:
                         header = st.selectbox("Header:",("Y", "N"))
                         delimiter = st.text_input("Delimiter:", max_chars=1, value=",")
                         quoting_options = {
@@ -346,12 +354,12 @@ def main():
                         quoting = st.selectbox("Quoting:", list(quoting_options.keys()))                    
                         head=True if header == 'Y' else False
 
-                        file_content = df_to_file(st.session_state.export_df, 'csv', 
+                        file_content = df_to_file(st.session_state.export_df, selected_format, 
                                                 sep=delimiter, quoting=quoting_options[quoting],header=head)
                     elif selected_format =='excel':
                         header = st.selectbox("Header:",("Y", "N"))
                         head=True if header == 'Y' else False
-                        file_content = df_to_file(st.session_state.export_df, 'excel',header=head)
+                        file_content = df_to_file(st.session_state.export_df, selected_format,header=head)
                     else:
                         file_content = df_to_file(st.session_state.export_df, selected_format)
                     
