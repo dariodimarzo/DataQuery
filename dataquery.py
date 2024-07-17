@@ -5,14 +5,19 @@ import io
 import base64
 import re
 import os
+#manage avro files
 import avro.schema
 from avro.datafile import DataFileReader
 from avro.io import DatumReader
-#from typing import List, Optional
+#manage zip files
 import zipfile
+#manage csv
 import csv
+#manage xml
 import lxml
+#manage html
 import html5lib
+import beautifulsoup4
 
 
 def load_file(file, con):
