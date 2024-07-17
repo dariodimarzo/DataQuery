@@ -27,7 +27,6 @@ def load_file(file, con):
         list: A list of table names that were registered.
 
     Raises:
-        ValueError: If the file format is not supported.
         Exception: If there is an error loading the file.
 
     """
@@ -219,7 +218,7 @@ def main():
     It also provides options for editing and downloading query results.
     """
 
-    st.set_page_config(page_title='DataQuery', page_icon=':wavy_dash:', layout="centered")
+    st.set_page_config(page_title='DataQuery', page_icon=':o:', layout="centered")
     st.title("DataQuery")
     st.subheader("Preview, query, edit and export data files")
 
@@ -238,7 +237,8 @@ def main():
         st.session_state.export_df=None
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True,
-        help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.')
+        help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.',
+        type=['csv', 'txt', 'xlsx', 'json', 'parquet', 'xml','avro','zip'])
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]

@@ -1,9 +1,9 @@
 streamlit
 numpy==1.26.4
-pandas
-duckdb
-openpyxl
-pyarrow
-lxml
-python-snappy
-pandavro
+pandas==2.2.2
+duckdb==1.0.0
+openpyxl==3.1.5
+pyarrow==16.1.0
+lxml==5.2.2
+python-snappy==0.7.2
+pandavro==1.8.0
