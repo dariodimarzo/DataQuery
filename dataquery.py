@@ -77,7 +77,7 @@ def load_file(file, con):
             df = pd.read_xml(file)
             table_names.append(register_dataframe(con, df, file_nm))
         else:
-            st.error(f"Unsupported file format: {file_extension}")
+            st.error(f"File {file.name} not loaded. Unsupported file format.")
         return table_names
     except Exception as e:
         st.error(f"Error loading file {file.name}: {str(e)}")
@@ -222,6 +222,8 @@ def main():
     st.title("DataQuery")
     st.subheader("Preview, query, edit and export data files")
 
+    file_ext=['avro','csv', 'json','parquet','txt', 'xlsx', 'xml','zip']
+
     # Initialize session state
     if 'query_result' not in st.session_state:
         st.session_state.query_result = None
@@ -238,7 +240,7 @@ def main():
 
     uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True,
         help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.',
-        type=['avro','csv', 'json','parquet','txt', 'xlsx', 'xml','zip'])
+        type=file_ext)
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]
@@ -254,21 +256,28 @@ def main():
     
     if uploaded_files:
         loaded_tab=""
+        excluded_tab=""
         for file in uploaded_files:
             if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
                 if file.type == "application/x-zip-compressed":
                     with zipfile.ZipFile(file) as z:
                         for zip_info in z.infolist():
-                            with z.open(zip_info) as zf:
-                                # Create a new file-like object for each file extracted from the zip
-                                extracted_file = io.BytesIO(zf.read())
-                                extracted_file.name = zip_info.filename
-                                loaded_tables = load_file(extracted_file, st.session_state.con)
-                                if loaded_tables:
-                                    for table in loaded_tables:
-                                        st.session_state.tables[table] = extracted_file.name
-                                    loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
-                                        #st.success(f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}")                           
+                            if not zip_info.is_dir():
+                                _, extension = os.path.splitext(zip_info.filename)
+                                if extension.lstrip('.').lower() in file_ext:
+                                    with z.open(zip_info) as zf:
+                                        # Create a new file-like object for each file extracted from the zip
+                                        extracted_file = io.BytesIO(zf.read())                                       
+                                        extracted_file.name = os.path.basename(zip_info.filename)
+                                        loaded_tables = load_file(extracted_file, st.session_state.con)
+                                        if loaded_tables:
+                                            for table in loaded_tables:
+                                                st.session_state.tables[table] = extracted_file.name
+                                            loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
+                                                #st.success(f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}")                           
+                                else:
+                                    excluded_tab+=f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
+                                
                 else:
                     loaded_tables = load_file(file, st.session_state.con)
                     if loaded_tables:
@@ -279,17 +288,22 @@ def main():
         
         if loaded_tab != "":
             st.success(loaded_tab)
+        if excluded_tab!="":
+            st.warning(excluded_tab)
        
 
         # Collapsible Data Preview
         if st.session_state.tables:
-            with st.expander("Data Preview", expanded=False):
-                tabs = st.tabs(list(st.session_state.tables.keys()))
-                for i, tab in enumerate(tabs):
-                    with tab:
-                        table_name = list(st.session_state.tables.keys())[i]
-                        preview_df = preview_data(st.session_state.con, table_name)
-                        st.dataframe(preview_df)
+            with st.expander("Data Preview", expanded=False):                          
+                tab_prev=st.selectbox('Select Table:',st.session_state.tables.keys())
+                preview_df = preview_data(st.session_state.con, tab_prev)
+                st.dataframe(preview_df)
+                #tabs = st.tabs(list(st.session_state.tables.keys()))
+                #for i, tab in enumerate(tabs):
+                #    with tab:
+                #        table_name = list(st.session_state.tables.keys())[i]
+                #        preview_df = preview_data(st.session_state.con, table_name)
+                #        st.dataframe(preview_df)
                         #st.text(f"Source file: {st.session_state.tables[table_name]}")
                         #st.text(f"Showing first 5 rows of {st.session_state.tables[i]}")
 
@@ -314,7 +328,7 @@ def main():
                         else:
                             st.error(f"Error executing query: {str(e)}")
                 else:
-                    st.warning("Please enter a SQL query.")         
+                    st.warning("Please enter a SQL query.")
 
         # Display query result and download options
         if st.session_state.query_result is not None:
@@ -338,7 +352,7 @@ def main():
             with col1:
                 with st.popover("Data Download"):
                     # File format selection
-                    file_formats = ['avro','csv','json','parquet','txt', 'xlsx','xml']
+                    file_formats = [item for item in file_ext if item != 'zip']
                     selected_format = st.selectbox("Select file format:", file_formats)
                     
                     # Delimiter and quoting options (for CSV)
