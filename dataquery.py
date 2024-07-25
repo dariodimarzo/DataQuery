@@ -15,24 +15,26 @@ import pandavro as pdx
 #from avro.io import DatumReader
 
 
-def get_file_options(file_name, sheet_names=None):
+def get_file_options(file_name, sheet_names=None,archive_name=None):
     """
     Get file options for csv, txt, xlsx files and return the selected options.
 
     Args:
         file_name (str): Name of the file.
         sheet_names (list): List of sheet names for Excel files.
+        archive_name: Name of the zip archive.
 
     Returns:
         dict: Selected options for the file or sheets.
     """
     
     options = {}
+    label_obj=f"{file_name}" if not archive_name else f"{archive_name} - {file_name}"
     #get file extension
     file_extension = file_name.split('.')[-1].lower()
     #get options only for csv,txt,xlsx
     if file_extension in ['csv', 'txt','xlsx']:
-        with st.expander(f"File Settings - {file_name} "):
+        with st.expander(f"File Settings - {label_obj}"):
             #if extension is xlsx get header option
             if file_extension == 'xlsx':
                 left_column, right_column = st.columns(2)
@@ -41,14 +43,14 @@ def get_file_options(file_name, sheet_names=None):
                 #loop all xlsx sheets:
                     with left_column  if index % 2 == 0 else right_column:
                         options['sheets'][sheet] = {
-                            'header': st.selectbox(f"Header for {file_name} - {sheet}", [0, None], format_func=lambda x: "Yes" if x == 0 else "No")
+                            'header': st.selectbox(f"Header for {file_name} - {sheet}", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{archive_name}_{file_name}_{sheet}")
                         }
             #if extension csv, txt get header, delimiter, quoting and quoting char
             elif file_extension in ['csv', 'txt']:
                 left_column, right_column = st.columns(2)
                 with left_column:
-                    options['header'] = st.selectbox(f"Header", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{file_name}")
-                    options['delimiter'] = st.text_input(f"Delimiter", ",",key=f"delimiter_{file_name}")
+                    options['header'] = st.selectbox(f"Header", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{archive_name}_{file_name}")
+                    options['delimiter'] = st.text_input(f"Delimiter", ",",key=f"delimiter_{archive_name}_{file_name}")
                 with right_column:
                     quoting_options = {                    
                         'QUOTE_ALL': csv.QUOTE_ALL,
@@ -56,19 +58,20 @@ def get_file_options(file_name, sheet_names=None):
                         'QUOTE_NONNUMERIC': csv.QUOTE_NONNUMERIC,
                         'QUOTE_NONE': csv.QUOTE_NONE
                     }
-                    options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{file_name}")
-                    options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{file_name}")
+                    options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{archive_name}_{file_name}")
+                    options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{archive_name}_{file_name}")
         
         return options
 
-def load_file(file, con, options=None):
+def load_file(file, con, options=None,archive_name=None):
     """
     Load a file into a dataframe and register it in a database connection.
 
-    Parameters:
-    - file: File object or path to the file.
-    - con: Database connection object.
-    - options: Dict of options for file loading.
+    Args:
+        file: File object or path to the file.
+        con: Database connection object.
+        options: Dict of options for file loading.
+        archive_name: Name of the zip archive.
 
     Returns:
     - List of table names where the data was registered, or None if there was an error.
@@ -77,6 +80,8 @@ def load_file(file, con, options=None):
     #get file extension and file anme
     file_extension = file.name.split('.')[-1].lower()
     file_nm = file.name.replace('.', '_')
+    archive_name=archive_name.replace('.', '_') if archive_name else None
+    file_nm= f"{archive_name}_{file_nm}" if archive_name else {file_nm}
     table_names = []
 
     try:
@@ -176,12 +181,12 @@ def run_query(con, sql_query):
     """
     Executes the given SQL query on the provided connection object and returns the result.
 
-    Parameters:
-    con (connection): The connection object to the database.
-    sql_query (str): The SQL query to be executed.
+    Args:
+        con (connection): The connection object to the database.
+        sql_query (str): The SQL query to be executed.
 
     Returns:
-    result (DataFrame): The result of the SQL query as a DataFrame.
+        result (DataFrame): The result of the SQL query as a DataFrame.
     """
 
     #execute sql query
@@ -215,6 +220,9 @@ def remove_view(con, view_name):
     Args:
         con (Connection): The DuckDB connection object.
         view_name (str): The name of the view to remove.
+    
+    Returns:
+        None
     """
 
     #remove view from db
@@ -350,13 +358,13 @@ def main():
                                         #in case of csv,txt, xlsx get file settings
                                         if extension.lstrip('.').lower() == 'xlsx':
                                             xls = pd.ExcelFile(extracted_file)
-                                            options = get_file_options(extracted_file.name, xls.sheet_names)
+                                            options = get_file_options(extracted_file.name, xls.sheet_names,file.name)
                                         elif extension.lstrip('.').lower() in ['csv','txt']:
-                                            options = get_file_options(extracted_file.name, extension.lstrip('.').lower())
+                                            options = get_file_options(extracted_file.name, extension.lstrip('.').lower(),file.name)
                                         
                                         file_options[extracted_file.name] = options
                                         #load tables registering view in duckdb
-                                        loaded_tables = load_file(extracted_file, st.session_state.con, options)
+                                        loaded_tables = load_file(extracted_file, st.session_state.con, options,file.name)
                                         if loaded_tables:
                                             for table in loaded_tables:
                                                 st.session_state.tables[table] = extracted_file.name
