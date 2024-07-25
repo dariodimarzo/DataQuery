@@ -14,92 +14,125 @@ import pandavro as pdx
 #from avro.datafile import DataFileReader
 #from avro.io import DatumReader
 
-def load_file(file, con):
+
+def get_file_options(file_name, sheet_names=None):
+    """
+    Get file options for csv, txt, xlsx files and return the selected options.
+
+    Args:
+        file_name (str): Name of the file.
+        sheet_names (list): List of sheet names for Excel files.
+
+    Returns:
+        dict: Selected options for the file or sheets.
+    """
+    
+    options = {}
+    #get file extension
+    file_extension = file_name.split('.')[-1].lower()
+    #get options only for csv,txt,xlsx
+    if file_extension in ['csv', 'txt','xlsx']:
+        with st.expander(f"File Settings - {file_name} "):
+            #if extension is xlsx get header option
+            if file_extension == 'xlsx':
+                left_column, right_column = st.columns(2)
+                options['sheets'] = {}
+                for index, sheet in enumerate(sheet_names):
+                #loop all xlsx sheets:
+                    with left_column  if index % 2 == 0 else right_column:
+                        options['sheets'][sheet] = {
+                            'header': st.selectbox(f"Header for {file_name} - {sheet}", [0, None], format_func=lambda x: "Yes" if x == 0 else "No")
+                        }
+            #if extension csv, txt get header, delimiter, quoting and quoting char
+            elif file_extension in ['csv', 'txt']:
+                left_column, right_column = st.columns(2)
+                with left_column:
+                    options['header'] = st.selectbox(f"Header", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{file_name}")
+                    options['delimiter'] = st.text_input(f"Delimiter", ",",key=f"delimiter_{file_name}")
+                with right_column:
+                    quoting_options = {                    
+                        'QUOTE_ALL': csv.QUOTE_ALL,
+                        'QUOTE_MINIMAL': csv.QUOTE_MINIMAL,
+                        'QUOTE_NONNUMERIC': csv.QUOTE_NONNUMERIC,
+                        'QUOTE_NONE': csv.QUOTE_NONE
+                    }
+                    options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{file_name}")
+                    options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{file_name}")
+        
+        return options
+
+def load_file(file, con, options=None):
     """
     Load a file into a dataframe and register it in a database connection.
 
     Parameters:
     - file: File object or path to the file.
     - con: Database connection object.
+    - options: Dict of options for file loading.
 
     Returns:
     - List of table names where the data was registered, or None if there was an error.
-
-    Raises:
-    - None.
     """
-
-    #get file extension and file name
+    
+    #get file extension and file anme
     file_extension = file.name.split('.')[-1].lower()
-    file_nm=file.name.replace('.','_')
-
+    file_nm = file.name.replace('.', '_')
     table_names = []
 
-    #read the file content
     try:
-        #manage csv and txt files
+        #manage csv and txt using collected file settings
         if file_extension in ['csv', 'txt']:
-            sample = file.read(8192)
-            file.seek(0)
-            #detect delimiter, header and quoting settings
-            try:
-                dialect = csv.Sniffer().sniff(sample.decode('utf-8'),delimiters=[',',';','|','\t'])
-                cs_header=csv.Sniffer().has_header(sample.decode('utf-8'))
-                cs_header=0 if cs_header else None
-                df = pd.read_csv(file,
-                                sep=dialect.delimiter,
-                                quotechar=dialect.quotechar,
-                                escapechar=dialect.escapechar,
-                                skipinitialspace=dialect.skipinitialspace,
-                                header=st.session_state.header)
-            #if failed, create one column of data with header
-            except:            
-                cs_header=0
-                df=pd.read_csv(file,header=st.session_state.header)
+            delim ='\t' if options['delimiter'] =='\\t' else options['delimiter']
             
-            #if no header found rename columns from default simple integer to col_integer
-            if cs_header is None:
-                    df.columns = [f'col_{i+1}' for i in range(len(df.columns))]  
-        
-        #manage xlsx files
+            df = pd.read_csv(file,
+                             sep=delim,
+                             quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
+                             quotechar=options.get('quotechar', '"'),
+                             header=options.get('header', 0))
+            #in case of no header rename columns from simple integer to col_integer
+            if options.get('header', 0) is None:
+                 df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
+        #manage xlsx using header settings collected
         elif file_extension == 'xlsx':
             xls = pd.ExcelFile(file)
-            #get a df for each sheet
-            dfs = {sheet_name: pd.read_excel(file, sheet_name=sheet_name) for sheet_name in xls.sheet_names}
-        #manage parquet files
+            dfs = {}
+            #loop all sheets and in case of no header rename columns from simple integer to col_integer
+            for sheet_name in xls.sheet_names:
+                sheet_options = options.get('sheets', {}).get(sheet_name, {})
+                dfs[sheet_name] = pd.read_excel(file, sheet_name=sheet_name, header=sheet_options.get('header', 0))
+                if sheet_options.get('header', 0) is None:
+                    dfs[sheet_name].columns = [f'col_{i+1}' for i in range(len(dfs[sheet_name].columns))]  
+        #manage other accepted file formats
         elif file_extension == 'parquet':
             df = pd.read_parquet(file)
-        #manage avro files
         elif file_extension == 'avro':
             df = pdx.read_avro(file, na_dtypes=True)
-        #manage json files
         elif file_extension == 'json':
             json_data = pd.read_json(file)
-            #Normalize nested JSON data
             df = pd.json_normalize(json_data.to_dict('records')) if isinstance(json_data, pd.DataFrame) else pd.json_normalize(json_data.to_dict())
-        #manage xml files
         elif file_extension == 'xml':
             df = pd.read_xml(file)
-        #get unsupported files
         else:
             st.error(f"File {file.name} not loaded. Unsupported file format.")
             return None
 
-        #register view in db for xlsx
+        #register dataframes into duckdb
         if file_extension == 'xlsx':
             for sheet_name, df in dfs.items():
                 table_name = register_dataframe(con, df, f"{file_nm}_{sheet_name}".lower())
                 table_names.append(table_name)
-        #register view in db for all other files
         else:
             table_name = register_dataframe(con, df, file_nm.lower())
             table_names.append(table_name)
 
         return table_names
 
-    #catch errors working files
     except Exception as e:
-        st.error(f"Error loading file {file.name}: {str(e)}")
+        #manage exception of wrong file settings provided for csv and txt
+        if file_extension in ['csv', 'txt'] and "Error tokenizing data" in str(e):
+            st.warning(f'{file.name} not loaded. Please check file settings.')
+        else:
+            st.error(f"Error loading file {file.name}: {str(e)}")
         return None
 
 def register_dataframe(con, df, file_name):
@@ -249,6 +282,7 @@ def main():
     The main function of the DataQuery application.
 
     This function handles the main logic of the application, including file uploading, data loading, data preview, SQL query execution, and result visualization.
+    It collects files settings for csv, txt and xlsx files.
     It also provides options for editing and downloading query results.
     """
 
@@ -297,39 +331,51 @@ def main():
     if uploaded_files:
         loaded_tab = ""
         excluded_tab = ""
-        #loop uploaded files
+        file_options = {}
+
         for file in uploaded_files:
-            #check if file already loaded
             if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
-                #check if file is a zip archive
+                file_extension = file.name.split('.')[-1].lower()
+                
+                #manage zip archives
                 if file.type == "application/x-zip-compressed":
-                    #extract files from zip archive
                     with zipfile.ZipFile(file) as z:
                         for zip_info in z.infolist():
-                            #check if file is a directory
                             if not zip_info.is_dir():
                                 _, extension = splitext(zip_info.filename)
-                                #check if file extension is supported
                                 if extension.lstrip('.').lower() in file_ext:
                                     with z.open(zip_info) as zf:
-                                        #load file
                                         extracted_file = BytesIO(zf.read())
                                         extracted_file.name = basename(zip_info.filename)
-                                        loaded_tables = load_file(extracted_file, st.session_state.con)
+                                        #in case of csv,txt, xlsx get file settings
+                                        if extension.lstrip('.').lower() == 'xlsx':
+                                            xls = pd.ExcelFile(extracted_file)
+                                            options = get_file_options(extracted_file.name, xls.sheet_names)
+                                        elif extension.lstrip('.').lower() in ['csv','txt']:
+                                            options = get_file_options(extracted_file.name, extension.lstrip('.').lower())
+                                        
+                                        file_options[extracted_file.name] = options
+                                        #load tables registering view in duckdb
+                                        loaded_tables = load_file(extracted_file, st.session_state.con, options)
                                         if loaded_tables:
-                                            #register tables in session state
                                             for table in loaded_tables:
                                                 st.session_state.tables[table] = extracted_file.name
                                             loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
-                                #if file extension not supported
                                 else:
                                     excluded_tab += f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
-                #if file is not a zip archive
+                #manage single files
                 else:
-                    #load file
-                    loaded_tables = load_file(file, st.session_state.con)
+                    #in case of csv,txt, xlsx get file settings
+                    if file_extension == 'xlsx':
+                        xls = pd.ExcelFile(file)
+                        options = get_file_options(file.name, xls.sheet_names)
+                    elif file_extension in ['csv','txt']:
+                        options = get_file_options(file.name)
+                    
+                    #load tables registering view in duckdb
+                    file_options[file.name] = options
+                    loaded_tables = load_file(file, st.session_state.con, options)
                     if loaded_tables:
-                        #register tables in session state
                         for table in loaded_tables:
                             st.session_state.tables[table] = file.name
                         loaded_tab += f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}  \n"
