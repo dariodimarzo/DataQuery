@@ -2,21 +2,17 @@ import streamlit as st
 import pandas as pd
 import duckdb
 from io import BytesIO
-#import base64
 from re import sub
-import os
+from os.path import splitext,basename
 #manage zip files
 import zipfile
 #manage csv
 import csv
-#manage xml
-#import lxml
 #manage avro
 import pandavro as pdx
 #import avro.schema
 #from avro.datafile import DataFileReader
 #from avro.io import DatumReader
-
 
 def load_file(file, con):
     """
@@ -31,28 +27,40 @@ def load_file(file, con):
 
     Raises:
     - None.
-
     """
-    
+
     #get file extension and file name
     file_extension = file.name.split('.')[-1].lower()
     file_nm=file.name.replace('.','_')
-    
+
     table_names = []
 
+    #read the file content
     try:
-        # Read the file content
         #manage csv and txt files
         if file_extension in ['csv', 'txt']:
-            sample = file.read(2048)
+            sample = file.read(8192)
             file.seek(0)
-            #detect delimiter and quoting settings
-            dialect = csv.Sniffer().sniff(sample.decode('utf-8'))
-            df = pd.read_csv(file, 
-                             sep=dialect.delimiter, 
-                             quotechar=dialect.quotechar,
-                             escapechar=dialect.escapechar,
-                             skipinitialspace=dialect.skipinitialspace)
+            #detect delimiter, header and quoting settings
+            try:
+                dialect = csv.Sniffer().sniff(sample.decode('utf-8'),delimiters=[',',';','|','\t'])
+                cs_header=csv.Sniffer().has_header(sample.decode('utf-8'))
+                cs_header=0 if cs_header else None
+                df = pd.read_csv(file,
+                                sep=dialect.delimiter,
+                                quotechar=dialect.quotechar,
+                                escapechar=dialect.escapechar,
+                                skipinitialspace=dialect.skipinitialspace,
+                                header=st.session_state.header)
+            #if failed, create one column of data with header
+            except:            
+                cs_header=0
+                df=pd.read_csv(file,header=st.session_state.header)
+            
+            #if no header found rename columns from default simple integer to col_integer
+            if cs_header is None:
+                    df.columns = [f'col_{i+1}' for i in range(len(df.columns))]  
+        
         #manage xlsx files
         elif file_extension == 'xlsx':
             xls = pd.ExcelFile(file)
@@ -88,7 +96,7 @@ def load_file(file, con):
             table_names.append(table_name)
 
         return table_names
-    
+
     #catch errors working files
     except Exception as e:
         st.error(f"Error loading file {file.name}: {str(e)}")
@@ -106,14 +114,13 @@ def register_dataframe(con, df, file_name):
     Returns:
         str: The name of the registered table.
     """
-    
+
     #clean table name
     table_name = clean_table_name(file_name)
 
     #register view in db
     con.register(table_name, df)
     return table_name
-
 
 def clean_table_name(name):
     """
@@ -125,13 +132,12 @@ def clean_table_name(name):
     Returns:
         str: The cleaned table name.
     """
-    # Replace spaces with underscores
-    name = name.replace(' ', '_')
-    # Remove all other special characters
-    name = sub(r'[^a-zA-Z0-9_]', '', name)
-    
-    return name
 
+    #replace spaces with underscores
+    name = name.replace(' ', '')
+    #remove all other special characters
+    name = sub(r'[^a-zA-Z0-9_]', '', name)
+    return name
 
 def run_query(con, sql_query):
     """
@@ -144,9 +150,10 @@ def run_query(con, sql_query):
     Returns:
     result (DataFrame): The result of the SQL query as a DataFrame.
     """
+
+    #execute sql query
     result = con.execute(sql_query).fetchdf()
     return result
-
 
 def preview_data(con, table_name, num_rows=5):
     """
@@ -160,10 +167,11 @@ def preview_data(con, table_name, num_rows=5):
     Returns:
         pandas.DataFrame: A DataFrame containing the preview data.
     """
+
     #get first 5 rows of the table
     query = f"SELECT * FROM {table_name} LIMIT {num_rows}"
     df = con.execute(query).fetchdf()
-    # Reset index to start from 1
+    #reset index to start from 1
     df.index = range(1, len(df) + 1)
     return df
 
@@ -175,36 +183,36 @@ def remove_view(con, view_name):
         con (Connection): The DuckDB connection object.
         view_name (str): The name of the view to remove.
     """
+
     #remove view from db
     try:
         con.execute(f"DROP VIEW IF EXISTS {view_name}")
     except duckdb.CatalogException as e:
         st.warning(f"Could not drop view {view_name}: {str(e)}")
 
-
-
 def df_to_file(df, file_format, **kwargs):
     """
     Convert DataFrame to various file formats.
-    
+
     Args:
         df (pd.DataFrame): The DataFrame to convert.
         file_format (str): The desired file format.
         **kwargs: Additional arguments for specific file formats.
-    
+
     Returns:
         bytes: The DataFrame converted to the specified format.
     """
+
     #create the buffer
     buffer = BytesIO()
-    
+
     try:
         #manage csv and txt files
         if file_format in ['csv','txt']:
             try:
                 df.to_csv(buffer, index=False, **kwargs)
+            #Catch specific CSV writing errors
             except csv.Error as e:
-            # Catch specific CSV writing errors
                 if "need to escape" in str(e):
                     st.warning("Special character found in the data.  \nPlease select a different quoting option.")
                 else:
@@ -217,7 +225,7 @@ def df_to_file(df, file_format, **kwargs):
             df.to_json(buffer, orient='records', **kwargs)
         #manage parquet files
         elif file_format == 'parquet':
-            df.to_parquet(buffer, index=False, engine='pyarrow', **kwargs)   
+            df.to_parquet(buffer, index=False, engine='pyarrow', **kwargs)
         #manage xml files
         elif file_format == 'xml':
             df.to_xml(buffer, index=False, **kwargs)
@@ -231,16 +239,15 @@ def df_to_file(df, file_format, **kwargs):
     except Exception as e:
         st.error(e)
         st.warning(f"{file_format} export not available for your data.  \nPlease select a different format.")
-    
+
     #return the buffer
     buffer.seek(0)
     return buffer.getvalue()
 
-
 def main():
     """
     The main function of the DataQuery application.
-    
+
     This function handles the main logic of the application, including file uploading, data loading, data preview, SQL query execution, and result visualization.
     It also provides options for editing and downloading query results.
     """
@@ -285,7 +292,7 @@ def main():
 
     # Update the list of uploaded files
     st.session_state.uploaded_files = uploaded_files
-    
+
     #if files uploaded
     if uploaded_files:
         loaded_tab = ""
@@ -301,13 +308,13 @@ def main():
                         for zip_info in z.infolist():
                             #check if file is a directory
                             if not zip_info.is_dir():
-                                _, extension = os.path.splitext(zip_info.filename)
+                                _, extension = splitext(zip_info.filename)
                                 #check if file extension is supported
                                 if extension.lstrip('.').lower() in file_ext:
                                     with z.open(zip_info) as zf:
                                         #load file
                                         extracted_file = BytesIO(zf.read())
-                                        extracted_file.name = os.path.basename(zip_info.filename)
+                                        extracted_file.name = basename(zip_info.filename)
                                         loaded_tables = load_file(extracted_file, st.session_state.con)
                                         if loaded_tables:
                                             #register tables in session state
@@ -329,15 +336,14 @@ def main():
 
         # Display success and warning messages
         if loaded_tab != "":
-            st.success(loaded_tab)
+            st.success(loaded_tab)                    
         if excluded_tab != "":
             st.warning(excluded_tab)
-       
 
         # Collapsible Data Preview
         if st.session_state.tables:
             # Display data preview for each table
-            with st.expander("Data Preview", expanded=False):                          
+            with st.expander("Data Preview", expanded=False):
                 tab_prev=st.selectbox('Select Table:',st.session_state.tables.keys())
                 preview_df = preview_data(st.session_state.con, tab_prev)
                 st.dataframe(preview_df)
@@ -347,8 +353,6 @@ def main():
                 #        table_name = list(st.session_state.tables.keys())[i]
                 #        preview_df = preview_data(st.session_state.con, table_name)
                 #        st.dataframe(preview_df)
-                        #st.text(f"Source file: {st.session_state.tables[table_name]}")
-                        #st.text(f"Showing first 5 rows of {st.session_state.tables[i]}")
 
             #SQL Query Section
             st.subheader("Query Data")
@@ -388,13 +392,13 @@ def main():
                 if st.session_state.edited_df is not None:
                     st.session_state.query_result=st.session_state.edited_df.copy()
                 st.dataframe(st.session_state.query_result)
-            
+
             #Prepare dataframe for export data
             if st.session_state.edited_df is not None:
                 st.session_state.export_df=st.session_state.edited_df.copy()
             else:
                 st.session_state.export_df=st.session_state.query_result.copy()
-
+                
             #Data Download Section
             col1, col2 = st.columns(2)
             with col1:
@@ -402,7 +406,7 @@ def main():
                     # File format selection
                     file_formats = [item for item in file_ext if item != 'zip']
                     selected_format = st.selectbox("Select file format:", file_formats)
-                    
+
                     # Delimiter and quoting options (for CSV)
                     if selected_format in ['csv','txt']:
                         header = st.selectbox("Header:",("Y", "N"))
@@ -413,10 +417,10 @@ def main():
                             'QUOTE_NONNUMERIC': csv.QUOTE_NONNUMERIC,
                             'QUOTE_NONE': csv.QUOTE_NONE
                         }
-                        quoting = st.selectbox("Quoting:", list(quoting_options.keys()))                    
+                        quoting = st.selectbox("Quoting:", list(quoting_options.keys()))
                         head=True if header == 'Y' else False
 
-                        file_content = df_to_file(st.session_state.export_df, selected_format, 
+                        file_content = df_to_file(st.session_state.export_df, selected_format,
                                                 sep=delimiter, quoting=quoting_options[quoting],header=head)
                     #manage xlsx download
                     elif selected_format =='xlsx':
@@ -426,7 +430,6 @@ def main():
                     #manage other file download
                     else:
                         file_content = df_to_file(st.session_state.export_df, selected_format)
-                    
 
                     # Generate file name and MIME type
                     file_name = f"query_result.{selected_format}"
@@ -438,10 +441,10 @@ def main():
                         'xml': 'application/xml'
                     }
                     mime_type = mime_types.get(selected_format, 'application/octet-stream')
-                    
+
                     # Download button
                     st.download_button(
-                        label=f"Download as {selected_format.upper()}",
+                        label=f"Download",
                         data=file_content,
                         file_name=file_name,
                         mime=mime_type,
