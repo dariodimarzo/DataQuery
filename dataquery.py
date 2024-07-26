@@ -15,7 +15,7 @@ import pandavro as pdx
 #from avro.io import DatumReader
 
 
-def get_file_options(file_name, sheet_names=None,archive_name=None):
+def get_file_options(file_name, sheet_names=None, archive_name=None):
     """
     Get file options for csv, txt, xlsx files and return the selected options.
 
@@ -29,11 +29,11 @@ def get_file_options(file_name, sheet_names=None,archive_name=None):
     """
     
     options = {}
-    label_obj=f"{file_name}" if not archive_name else f"{archive_name} - {file_name}"
+    label_obj = f"{file_name}" if not archive_name else f"{archive_name} - {file_name}"
     #get file extension
     file_extension = file_name.split('.')[-1].lower()
     #get options only for csv,txt,xlsx
-    if file_extension in ['csv', 'txt','xlsx']:
+    if file_extension in ['csv', 'txt', 'xlsx']:
         with st.expander(f"File Settings - {label_obj}"):
             #if extension is xlsx get header option
             if file_extension == 'xlsx':
@@ -41,7 +41,7 @@ def get_file_options(file_name, sheet_names=None,archive_name=None):
                 options['sheets'] = {}
                 for index, sheet in enumerate(sheet_names):
                 #loop all xlsx sheets:
-                    with left_column  if index % 2 == 0 else right_column:
+                    with left_column if index % 2 == 0 else right_column:
                         options['sheets'][sheet] = {
                             'header': st.selectbox(f"Header for {file_name} - {sheet}", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{archive_name}_{file_name}_{sheet}")
                         }
@@ -60,10 +60,10 @@ def get_file_options(file_name, sheet_names=None,archive_name=None):
                     }
                     options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{archive_name}_{file_name}")
                     options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{archive_name}_{file_name}")
-        
-        return options
+    
+    return options
 
-def load_file(file, con, options=None,archive_name=None):
+def load_file(file, con, options=None, archive_name=None):
     """
     Load a file into a dataframe and register it in a database connection.
 
@@ -77,17 +77,18 @@ def load_file(file, con, options=None,archive_name=None):
     - List of table names where the data was registered, or None if there was an error.
     """
     
-    #get file extension and file anme
+    #get file extension file name and archive name
+    archive_name = '' if not archive_name else archive_name.replace('.','_').lower()
     file_extension = file.name.split('.')[-1].lower()
-    file_nm = file.name.replace('.', '_')
-    archive_name=archive_name.replace('.', '_') if archive_name else None
-    file_nm= f"{archive_name}_{file_nm}" if archive_name else {file_nm}
+    file_nm = file.name.replace('.','_').lower()
+    archive_name = archive_name if archive_name else None
+    file_nm = f"{archive_name}_{file_nm}" if archive_name else file_nm
     table_names = []
 
     try:
         #manage csv and txt using collected file settings
         if file_extension in ['csv', 'txt']:
-            delim ='\t' if options['delimiter'] =='\\t' else options['delimiter']
+            delim = '\t' if options['delimiter'] == '\\t' else options['delimiter']
             
             df = pd.read_csv(file,
                              sep=delim,
@@ -124,10 +125,11 @@ def load_file(file, con, options=None,archive_name=None):
         #register dataframes into duckdb
         if file_extension == 'xlsx':
             for sheet_name, df in dfs.items():
-                table_name = register_dataframe(con, df, f"{file_nm}_{sheet_name}".lower())
+                sheet_name = sheet_name.lower()
+                table_name = register_dataframe(con, df, f"{file_nm}_{sheet_name}")
                 table_names.append(table_name)
         else:
-            table_name = register_dataframe(con, df, file_nm.lower())
+            table_name = register_dataframe(con, df, file_nm)
             table_names.append(table_name)
 
         return table_names
@@ -355,16 +357,12 @@ def main():
                                     with z.open(zip_info) as zf:
                                         extracted_file = BytesIO(zf.read())
                                         extracted_file.name = basename(zip_info.filename)
-                                        #in case of csv,txt, xlsx get file settings
-                                        if extension.lstrip('.').lower() == 'xlsx':
-                                            xls = pd.ExcelFile(extracted_file)
-                                            options = get_file_options(extracted_file.name, xls.sheet_names,file.name)
-                                        elif extension.lstrip('.').lower() in ['csv','txt']:
-                                            options = get_file_options(extracted_file.name, extension.lstrip('.').lower(),file.name)
+                                        #get file options
+                                        options = get_file_options(extracted_file.name, None if extension.lstrip('.').lower() != 'xlsx' else pd.ExcelFile(extracted_file).sheet_names, file.name)
                                         
                                         file_options[extracted_file.name] = options
                                         #load tables registering view in duckdb
-                                        loaded_tables = load_file(extracted_file, st.session_state.con, options,file.name)
+                                        loaded_tables = load_file(extracted_file, st.session_state.con, options, file.name)
                                         if loaded_tables:
                                             for table in loaded_tables:
                                                 st.session_state.tables[table] = extracted_file.name
@@ -373,12 +371,8 @@ def main():
                                     excluded_tab += f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
                 #manage single files
                 else:
-                    #in case of csv,txt, xlsx get file settings
-                    if file_extension == 'xlsx':
-                        xls = pd.ExcelFile(file)
-                        options = get_file_options(file.name, xls.sheet_names)
-                    elif file_extension in ['csv','txt']:
-                        options = get_file_options(file.name)
+                    #get file options
+                    options = get_file_options(file.name, None if file_extension != 'xlsx' else pd.ExcelFile(file).sheet_names)
                     
                     #load tables registering view in duckdb
                     file_options[file.name] = options
