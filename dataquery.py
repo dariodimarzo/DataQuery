@@ -232,8 +232,8 @@ def files_to_table(file, con, options= None, archive_name = None):
         elif file_extension == 'json':
             #TODO: fix
             # Load the JSON file
-            with open('param.json', 'r') as file:
-                json_data = json.load(file)
+            with open(file, 'r') as file_json:
+                json_data = json.load(file_json)
             ## Check if the loaded data is a list
             if isinstance(json_data, list):
                 # Directly create a DataFrame from the list of dictionaries
