@@ -10,7 +10,6 @@ import zipfile
 import csv
 #manage avro
 import pandavro as pdx
-import json
 #import avro.schema
 #from avro.datafile import DataFileReader
 #from avro.io import DatumReader
@@ -230,17 +229,15 @@ def files_to_table(file, con, options= None, archive_name = None):
         elif file_extension == 'avro':
             df = pdx.read_avro(file, na_dtypes=True)
         elif file_extension == 'json':
-            #TODO: fix
-            # Load the JSON file
-            with open(file, 'r') as file_json:
-                json_data = json.load(file_json)
-            ## Check if the loaded data is a list
-            if isinstance(json_data, list):
-                # Directly create a DataFrame from the list of dictionaries
-                df = pd.DataFrame(json_data)
+            json_data = pd.read_json(file)
+            # Check if the data is a single record or multiple records
+            if len(json_data.index) == 1 and not isinstance(json_data.iloc[0, 0], dict):
+                # Handle single JSON object (not in a list)
+                df = pd.DataFrame([json_data.iloc[0].to_dict()])
             else:
-                # If it's a single dictionary, wrap it in a list
-                df = pd.DataFrame([json_data])
+                # Handle list of objects or nested structure
+                df = pd.json_normalize(json_data.to_dict('records'))
+            
             #json_data = pd.read_json(file)
             #df = pd.json_normalize(json_data.to_dict('records')) if isinstance(json_data, pd.DataFrame) else pd.json_normalize(json_data.to_dict())
         elif file_extension == 'xml':
