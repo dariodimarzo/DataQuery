@@ -10,6 +10,7 @@ import zipfile
 import csv
 #manage avro
 import pandavro as pdx
+import json
 #import avro.schema
 #from avro.datafile import DataFileReader
 #from avro.io import DatumReader
@@ -229,14 +230,13 @@ def files_to_table(file, con, options= None, archive_name = None):
         elif file_extension == 'avro':
             df = pdx.read_avro(file, na_dtypes=True)
         elif file_extension == 'json':
-            json_data = pd.read_json(file)
-            # Check if the data is a single record or multiple records
-            if len(json_data.index) == 1 and not isinstance(json_data.iloc[0, 0], dict):
-                # Handle single JSON object (not in a list)
-                df = pd.DataFrame([json_data.iloc[0].to_dict()])
+            json_data=json.load(file)
+            if isinstance(data, dict):
+                # It's a single object
+                df = pd.DataFrame([data])
             else:
-                # Handle list of objects or nested structure
-                df = pd.json_normalize(json_data.to_dict('records'))
+                # It's a list of objects
+                df = pd.json_normalize(data)
             
             #json_data = pd.read_json(file)
             #df = pd.json_normalize(json_data.to_dict('records')) if isinstance(json_data, pd.DataFrame) else pd.json_normalize(json_data.to_dict())
