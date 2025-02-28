@@ -231,12 +231,12 @@ def files_to_table(file, con, options= None, archive_name = None):
             df = pdx.read_avro(file, na_dtypes=True)
         elif file_extension == 'json':
             json_data=json.load(file)
-            if isinstance(data, dict):
+            if isinstance(json_data, dict):
                 # It's a single object
-                df = pd.DataFrame([data])
+                df = pd.DataFrame([json_data])
             else:
                 # It's a list of objects
-                df = pd.json_normalize(data)
+                df = pd.json_normalize(json_data)
             
             #json_data = pd.read_json(file)
             #df = pd.json_normalize(json_data.to_dict('records')) if isinstance(json_data, pd.DataFrame) else pd.json_normalize(json_data.to_dict())
