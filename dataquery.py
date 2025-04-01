@@ -500,6 +500,7 @@ def df_to_file(df, file_format, **kwargs):
     try:
         #manage csv and txt files
         if file_format in ['csv','txt']:
+            kwargs['dtype'] = str
             try:
                 df.to_csv(buffer, index=False, **kwargs)
             #Catch specific CSV writing errors
