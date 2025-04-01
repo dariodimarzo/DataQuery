@@ -210,7 +210,8 @@ def files_to_table(file, con, options= None, archive_name = None):
                              sep=delim,
                              quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
                              quotechar=options.get('quotechar', '"'),
-                             header=options.get('header', 0))
+                             header=options.get('header', 0),
+                             dtype=str)
             #in case of no header rename columns from simple integer to col_integer
             if options.get('header', 0) is None:
                  df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
