@@ -178,7 +178,7 @@ def get_file_options(file_name, sheet_names = None, archive_name = None):
                     }
                     options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{archive_name}_{file_name}")
                     options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{archive_name}_{file_name}")
-    
+                    options['dtype'] = "str"
     return options
 
 def files_to_table(file, con, options= None, archive_name = None):
@@ -205,13 +205,24 @@ def files_to_table(file, con, options= None, archive_name = None):
         #manage csv and txt using collected file settings
         if file_extension in ['csv', 'txt']:
             delim = '\t' if options['delimiter'] == '\\t' else options['delimiter']
-            
-            df = pd.read_csv(file,
-                             sep=delim,
-                             quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
-                             quotechar=options.get('quotechar', '"'),
-                             header=options.get('header', 0),
-                             dtype=str)
+            #read csv using utf-8 encoding
+            try:
+                df = pd.read_csv(file,
+                                sep=delim,
+                                quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
+                                quotechar=options.get('quotechar', '"'),
+                                header=options.get('header', 0),
+                                dtype=options.get('dtype', str),
+                                enconding='utf-8')
+            #in case of error try reading with latin1 encoding
+            except:
+                df = pd.read_csv(file,
+                                sep=delim,
+                                quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
+                                quotechar=options.get('quotechar', '"'),
+                                header=options.get('header', 0),
+                                dtype=options.get('dtype', str),
+                                enconding='latin1')
             #in case of no header rename columns from simple integer to col_integer
             if options.get('header', 0) is None:
                  df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
