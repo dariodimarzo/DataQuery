@@ -213,7 +213,7 @@ def files_to_table(file, con, options= None, archive_name = None):
                                 quotechar=options.get('quotechar', '"'),
                                 header=options.get('header', 0),
                                 dtype=options.get('dtype', str),
-                                enconding='utf-8')
+                                encoding='utf-8')
             #in case of error try reading with latin1 encoding
             except:
                 df = pd.read_csv(file,
@@ -222,7 +222,7 @@ def files_to_table(file, con, options= None, archive_name = None):
                                 quotechar=options.get('quotechar', '"'),
                                 header=options.get('header', 0),
                                 dtype=options.get('dtype', str),
-                                enconding='latin1')
+                                encoding='latin1')
             #in case of no header rename columns from simple integer to col_integer
             if options.get('header', 0) is None:
                  df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
