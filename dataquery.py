@@ -64,7 +64,7 @@ def remove_view(con,view_name):
 
     #remove view from db
     try:
-        con.execute(f"DROP VIEW IF EXISTS {view_name}")
+        con.execute(f'DROP VIEW IF EXISTS "{view_name}"')
     except duckdb.CatalogException as e:
         st.warning(f"Could not drop view {view_name}: {str(e)}")
 
@@ -206,26 +206,15 @@ def files_to_table(file, con, options= None, archive_name = None):
         if file_extension in ['csv', 'txt']:
             delim = '\t' if options['delimiter'] == '\\t' else options['delimiter']
             #read csv using utf-8 encoding
-            try:
-                df = pd.read_csv(file,
-                                sep=delim,
-                                quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
-                                quotechar=options.get('quotechar', '"'),
-                                header=options.get('header', 0),
-                                dtype=options.get('dtype', str),
-                                encoding='utf-8')
-            #in case of error try reading with latin1 encoding
-            except:
-                df = pd.read_csv(file,
-                                sep=delim,
-                                quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
-                                quotechar=options.get('quotechar', '"'),
-                                header=options.get('header', 0),
-                                dtype=options.get('dtype', str),
-                                encoding='latin1')
+            df = pd.read_csv(file,
+                            sep=delim,
+                            quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
+                            quotechar=options.get('quotechar', '"'),
+                            header=options.get('header', 0),
+                            dtype=options.get('dtype', str),on_bad_lines='skip',encoding_errors='ignore')
             #in case of no header rename columns from simple integer to col_integer
             if options.get('header', 0) is None:
-                 df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
+                df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
         #manage xlsx using header settings collected
         elif file_extension == 'xlsx':
             xls = pd.ExcelFile(file)
@@ -271,6 +260,7 @@ def files_to_table(file, con, options= None, archive_name = None):
         return table_names
 
     except Exception as e:
+        st.error(f"Error loading file {file.name}: {str(e)}")
         #manage exception of wrong file settings provided for csv and txt
         if file_extension in ['csv', 'txt'] and "Error tokenizing data" in str(e):
             st.warning(f'{file.name} not loaded. Please check file settings.')
@@ -329,7 +319,7 @@ def get_preview_data(con, table_name, num_rows = 5):
     """
 
     #get first 5 rows of the table
-    query = f"SELECT * FROM {table_name} LIMIT {num_rows}"
+    query = f'SELECT * FROM "{table_name}" LIMIT {num_rows}'
     df = con.execute(query).fetchdf()
     #reset index to start from 1
     df.index = range(1, len(df) + 1)
