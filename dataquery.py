@@ -291,6 +291,7 @@ def register_dataframe(con, df, file_name):
 def clean_table_name(name):
     """
     Cleans the table name by replacing spaces with underscores and removing all other special characters.
+    Adds an underscore if the name starts or ends with a number.
 
     Args:
         name (str): The table name to be cleaned.
@@ -299,10 +300,18 @@ def clean_table_name(name):
         name(str): The cleaned table name.
     """
 
-    #replace spaces with underscores
+    # Replace spaces with underscores
     name = name.replace(' ', '').lower()
-    #remove all other special characters
+    # Remove all other special characters
     name = sub(r'[^a-zA-Z0-9_]', '', name)
+    
+    # Add an underscore if the name starts with a number
+    if name[0].isdigit():
+        name = f"_{name}"
+    # Add an underscore if the name ends with a number
+    if name[-1].isdigit():
+        name = f"{name}_"
+
     return name
 
 def get_preview_data(con, table_name, num_rows = 5):
