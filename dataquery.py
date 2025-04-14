@@ -1,19 +1,14 @@
 import streamlit as st
 import pandas as pd
-import duckdb
+import duckdb 
 from io import BytesIO
 from re import sub
-from os.path import splitext,basename
-#manage zip files
+from os.path import splitext, basename
 import zipfile
-#manage csv
 import csv
-#manage avro
 import pandavro as pdx
-import json
-#import avro.schema
-#from avro.datafile import DataFileReader
-#from avro.io import DatumReader
+import json  
+from code_editor import code_editor  
 
 
 def upload_files(file_ext):
@@ -21,23 +16,26 @@ def upload_files(file_ext):
     Uploads data files and zip archives.
 
     Args:
-        file_ext (str): The file extension to filter the uploaded files.
+        file_ext (list): A list of file extensions to filter the uploaded files.
 
     Returns:
-        st.session_state.uploaded_files (list): A list of uploaded files.
+        list: A list of uploaded files stored in `st.session_state.uploaded_files`.
 
-    Raises:
-        None
-
+    Notes:
+        - Handles file uploads via Streamlit's file uploader.
+        - Removes views from the database for files that are no longer uploaded.
     """
-    #upload files object
-    uploaded_files = st.file_uploader("Choose data files", accept_multiple_files=True,
+    # Upload files object
+    uploaded_files = st.file_uploader(
+        "Choose data files",
+        accept_multiple_files=True,
         help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.',
-        type=file_ext)
+        type=file_ext,
+    )
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]
-    #remove view from db for removed files
+    # Remove views from the database for removed files
     for file in removed_files:
         tables_to_remove = [table for table, source in st.session_state.tables.items() if source == file.name]
         for table in tables_to_remove:
@@ -50,44 +48,51 @@ def upload_files(file_ext):
 
     return st.session_state.uploaded_files
 
-def remove_view(con,view_name):
+
+def remove_view(con, view_name):
     """
-    Safely remove a view from the DuckDB connection.
+    Safely removes a view from the DuckDB connection.
 
     Args:
-        con (Connection): The DuckDB connection object.
+        con (duckdb.Connection): The DuckDB connection object.
         view_name (str): The name of the view to remove.
-    
+
     Returns:
         None
-    """
 
-    #remove view from db
+    Notes:
+        - If the view does not exist or cannot be dropped, a warning is displayed.
+    """
     try:
         con.execute(f'DROP VIEW IF EXISTS "{view_name}"')
     except duckdb.CatalogException as e:
         st.warning(f"Could not drop view {view_name}: {str(e)}")
 
+
 def files_to_db(file_ext):
     """
-    Load files into a database and register them as tables.
+    Loads files into a DuckDB database and registers them as tables.
 
     Args:
         file_ext (list): A list of file extensions to be loaded.
 
     Returns:
-        st.session_state.tables (Dict): A dictionary mapping table names to file names.
+        dict: A dictionary mapping table names to file names.
 
+    Notes:
+        - Logs messages about successfully loaded tables and excluded files.
+        - Handles zip archives and extracts supported files for loading.
+        - Registers tables in the DuckDB connection.
     """
     loaded_tab = ""
     excluded_tab = ""
     file_options = {}
 
-    for file in  st.session_state.uploaded_files:
+    for file in st.session_state.uploaded_files:
         if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
             file_extension = file.name.split('.')[-1].lower()
-            
-            #manage zip archives
+
+            # Manage zip archives
             if file.type == "application/x-zip-compressed":
                 with zipfile.ZipFile(file) as z:
                     for zip_info in z.infolist():
@@ -97,11 +102,15 @@ def files_to_db(file_ext):
                                 with z.open(zip_info) as zf:
                                     extracted_file = BytesIO(zf.read())
                                     extracted_file.name = basename(zip_info.filename)
-                                    #get file options
-                                    options = get_file_options(extracted_file.name, None if extension.lstrip('.').lower() != 'xlsx' else pd.ExcelFile(extracted_file).sheet_names, file.name)
-                                    
+                                    # Get file options
+                                    options = get_file_options(
+                                        extracted_file.name,
+                                        None if extension.lstrip('.').lower() != 'xlsx' else pd.ExcelFile(extracted_file).sheet_names,
+                                        file.name,
+                                    )
+
                                     file_options[extracted_file.name] = options
-                                    #load tables registering view in duckdb
+                                    # Load tables and register views in DuckDB
                                     loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name)
                                     if loaded_tables:
                                         for table in loaded_tables:
@@ -109,12 +118,12 @@ def files_to_db(file_ext):
                                         loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
                             else:
                                 excluded_tab += f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
-            #manage single files
+            # Manage single files
             else:
-                #get file options
+                # Get file options
                 options = get_file_options(file.name, None if file_extension != 'xlsx' else pd.ExcelFile(file).sheet_names)
-                
-                #load tables registering view in duckdb
+
+                # Load tables and register views in DuckDB
                 file_options[file.name] = options
                 loaded_tables = files_to_table(file, st.session_state.con, options)
                 if loaded_tables:
@@ -131,58 +140,66 @@ def files_to_db(file_ext):
     return st.session_state.tables
 
 
-def get_file_options(file_name, sheet_names = None, archive_name = None):
+def get_file_options(file_name, sheet_names=None, archive_name=None):
     """
-    Get file options for csv, txt, xlsx files and return the selected options.
+    Generates file options for CSV, TXT, and XLSX files based on user input.
 
     Args:
-        file_name (str): Name of the file.
-        sheet_names (list): List of sheet names for Excel files.
-        archive_name: Name of the zip archive.
+        file_name (str): The name of the file.
+        sheet_names (list, optional): A list of sheet names for Excel files. Defaults to None.
+        archive_name (str, optional): The name of the zip archive. Defaults to None.
 
     Returns:
-        options (Dict): Selected options for the file or sheets.
+        dict: A dictionary containing the selected options for the file or its sheets.
+
+    Notes:
+        - Displays Streamlit UI components for user input.
+        - Supports options like headers, delimiters, and quoting for CSV/TXT files.
     """
-    
     options = {}
     label_obj = f"{file_name}" if not archive_name else f"{archive_name} - {file_name}"
-    #get file extension
     file_extension = file_name.split('.')[-1].lower()
-    #get options only for csv,txt,xlsx
     if file_extension in ['csv', 'txt', 'xlsx']:
         with st.expander(f"File Settings - {label_obj}"):
-            #if extension is xlsx get header option
             if file_extension == 'xlsx':
-                #use two columns layout
                 left_column, right_column = st.columns(2)
                 options['sheets'] = {}
                 for index, sheet in enumerate(sheet_names):
-                #loop all xlsx sheets:
                     with left_column if index % 2 == 0 else right_column:
                         options['sheets'][sheet] = {
-                            'header': st.selectbox(f"Header for {file_name} - {sheet}", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{archive_name}_{file_name}_{sheet}")
+                            'header': st.selectbox(
+                                f"Header for {file_name} - {sheet}",
+                                [0, None],
+                                format_func=lambda x: "Yes" if x == 0 else "No",
+                                key=f"header_{archive_name}_{file_name}_{sheet}",
+                            )
                         }
-            #if extension csv, txt get header, delimiter, quoting and quoting char
             elif file_extension in ['csv', 'txt']:
-                #use two columns layout
                 left_column, right_column = st.columns(2)
                 with left_column:
-                    options['header'] = st.selectbox(f"Header", [0, None], format_func=lambda x: "Yes" if x == 0 else "No",key=f"header_{archive_name}_{file_name}")
-                    options['delimiter'] = st.text_input(f"Delimiter", ",",key=f"delimiter_{archive_name}_{file_name}")
+                    options['header'] = st.selectbox(
+                        f"Header",
+                        [0, None],
+                        format_func=lambda x: "Yes" if x == 0 else "No",
+                        key=f"header_{archive_name}_{file_name}",
+                    )
+                    options['delimiter'] = st.text_input(f"Delimiter", ",", key=f"delimiter_{archive_name}_{file_name}")
                 with right_column:
-                    quoting_options = {                    
+                    quoting_options = {
                         'QUOTE_ALL': csv.QUOTE_ALL,
                         'QUOTE_MINIMAL': csv.QUOTE_MINIMAL,
                         'QUOTE_NONNUMERIC': csv.QUOTE_NONNUMERIC,
-                        'QUOTE_NONE': csv.QUOTE_NONE
+                        'QUOTE_NONE': csv.QUOTE_NONE,
                     }
-                    options['quoting'] = st.selectbox(f"Quoting", list(quoting_options.keys()),key=f"quoting_{archive_name}_{file_name}")
-                    options['quotechar'] = st.text_input(f"Quote character", '"',key=f"quote_{archive_name}_{file_name}")
+                    options['quoting'] = st.selectbox(
+                        f"Quoting", list(quoting_options.keys()), key=f"quoting_{archive_name}_{file_name}"
+                    )
+                    options['quotechar'] = st.text_input(f"Quote character", '"', key=f"quote_{archive_name}_{file_name}")
                     options['dtype'] = "str"
     return options
 
-def files_to_table(file, con, options= None, archive_name = None):
 
+def files_to_table(file, con, options=None, archive_name=None):
     """
     Get dataframe from file and register it in a database connection.
 
@@ -195,59 +212,59 @@ def files_to_table(file, con, options= None, archive_name = None):
     Returns:
         table_names(List): List of table names where the data was registered, or None if there was an error.
     """
-    
-    #get file extension file name and archive name
+    # Get file extension, file name, and archive name
     file_extension = file.name.split('.')[-1].lower()
-    file_nm = f"{archive_name.replace('.','_')}_{file.name.replace('.','_')}" if archive_name else file.name.replace('.','_')
+    file_nm = f"{archive_name.replace('.', '_')}_{file.name.replace('.', '_')}" if archive_name else file.name.replace('.', '_')
     table_names = []
 
     try:
-        #manage csv and txt using collected file settings
+        # Manage CSV and TXT using collected file settings
         if file_extension in ['csv', 'txt']:
             delim = '\t' if options['delimiter'] == '\\t' else options['delimiter']
-            #read csv using utf-8 encoding
-            df = pd.read_csv(file,
-                            sep=delim,
-                            quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
-                            quotechar=options.get('quotechar', '"'),
-                            header=options.get('header', 0),
-                            dtype=options.get('dtype', str),on_bad_lines='skip',encoding_errors='ignore')
-            #in case of no header rename columns from simple integer to col_integer
+            # Read CSV using utf-8 encoding
+            df = pd.read_csv(
+                file,
+                sep=delim,
+                quoting=getattr(csv, options.get('quoting', 'QUOTE_NONE')),
+                quotechar=options.get('quotechar', '"'),
+                header=options.get('header', 0),
+                dtype=options.get('dtype', str),
+                on_bad_lines='skip',
+                encoding_errors='ignore',
+            )
+            # In case of no header, rename columns from simple integer to col_integer
             if options.get('header', 0) is None:
-                df.columns = [f'col_{i+1}' for i in range(len(df.columns))] 
-        #manage xlsx using header settings collected
+                df.columns = [f'col_{i+1}' for i in range(len(df.columns))]
+        # Manage XLSX using header settings collected
         elif file_extension == 'xlsx':
             xls = pd.ExcelFile(file)
             dfs = {}
-            #loop all sheets and in case of no header rename columns from simple integer to col_integer
+            # Loop all sheets and in case of no header, rename columns from simple integer to col_integer
             for sheet_name in xls.sheet_names:
                 sheet_options = options.get('sheets', {}).get(sheet_name, {})
                 dfs[sheet_name] = pd.read_excel(file, sheet_name=sheet_name, header=sheet_options.get('header', 0))
                 if sheet_options.get('header', 0) is None:
-                    dfs[sheet_name].columns = [f'col_{i+1}' for i in range(len(dfs[sheet_name].columns))]  
-        #manage other accepted file formats
+                    dfs[sheet_name].columns = [f'col_{i+1}' for i in range(len(dfs[sheet_name].columns))]
+        # Manage other accepted file formats
         elif file_extension == 'parquet':
             df = pd.read_parquet(file)
         elif file_extension == 'avro':
             df = pdx.read_avro(file, na_dtypes=True)
         elif file_extension == 'json':
-            json_data=json.load(file)
+            json_data = json.load(file)
             if isinstance(json_data, dict):
                 # It's a single object
                 df = pd.DataFrame([json_data])
             else:
                 # It's a list of objects
                 df = pd.json_normalize(json_data)
-            
-            #json_data = pd.read_json(file)
-            #df = pd.json_normalize(json_data.to_dict('records')) if isinstance(json_data, pd.DataFrame) else pd.json_normalize(json_data.to_dict())
         elif file_extension == 'xml':
             df = pd.read_xml(file)
         else:
             st.error(f"File {file.name} not loaded. Unsupported file format.")
             return None
 
-        #register dataframes into duckdb
+        # Register dataframes into DuckDB
         if file_extension == 'xlsx':
             for sheet_name, df in dfs.items():
                 sheet_name = sheet_name.lower()
@@ -261,12 +278,13 @@ def files_to_table(file, con, options= None, archive_name = None):
 
     except Exception as e:
         st.error(f"Error loading file {file.name}: {str(e)}")
-        #manage exception of wrong file settings provided for csv and txt
+        # Manage exception of wrong file settings provided for CSV and TXT
         if file_extension in ['csv', 'txt'] and "Error tokenizing data" in str(e):
             st.warning(f'{file.name} not loaded. Please check file settings.')
         else:
             st.error(f"Error loading file {file.name}: {str(e)}")
         return None
+
 
 def register_dataframe(con, df, file_name):
     """
@@ -280,13 +298,13 @@ def register_dataframe(con, df, file_name):
     Returns:
         table_name(str): The name of the registered table.
     """
-
-    #clean table name
+    # Clean table name
     table_name = clean_table_name(file_name)
 
-    #register view in db
+    # Register view in db
     con.register(table_name, df)
     return table_name
+
 
 def clean_table_name(name):
     """
@@ -299,12 +317,11 @@ def clean_table_name(name):
     Returns:
         name(str): The cleaned table name.
     """
-
     # Replace spaces with underscores
     name = name.replace(' ', '').lower()
     # Remove all other special characters
     name = sub(r'[^a-zA-Z0-9_]', '', name)
-    
+
     # Add an underscore if the name starts with a number
     if name[0].isdigit():
         name = f"_{name}"
@@ -314,7 +331,8 @@ def clean_table_name(name):
 
     return name
 
-def get_preview_data(con, table_name, num_rows = 5):
+
+def get_preview_data(con, table_name, num_rows=5):
     """
     Get preview data for a given table.
 
@@ -326,15 +344,15 @@ def get_preview_data(con, table_name, num_rows = 5):
     Returns:
         df(pandas.DataFrame): A DataFrame containing the preview data.
     """
-
-    #get first 5 rows of the table
+    # Get first 5 rows of the table
     query = f'SELECT * FROM "{table_name}" LIMIT {num_rows}'
     df = con.execute(query).fetchdf()
-    #reset index to start from 1
+    # Reset index to start from 1
     df.index = range(1, len(df) + 1)
     return df
 
-def data_preview(num_rows = 5):
+
+def data_preview(num_rows=5):
     """
     Display data preview for each table.
 
@@ -345,48 +363,77 @@ def data_preview(num_rows = 5):
         st.dataframe(preview_df): The preview of the selected table.
     """
     with st.expander("Data Preview", expanded=False):
-        tab_prev=st.selectbox('Select Table:',st.session_state.tables.keys())
-        preview_df = get_preview_data(st.session_state.con, tab_prev,num_rows)
+        tab_prev = st.selectbox('Select Table:', st.session_state.tables.keys())
+        preview_df = get_preview_data(st.session_state.con, tab_prev, num_rows)
         return st.dataframe(preview_df)
-        #tabs = st.tabs(list(st.session_state.tables.keys()))
-        #for i, tab in enumerate(tabs):
-        #    with tab:
-        #        table_name = list(st.session_state.tables.keys())[i]
-        #        preview_df = get_preview_data(st.session_state.con, table_name)
-        #        st.dataframe(preview_df)
+
 
 def get_query():
     """
-    Function to get user input for SQL query and execute it.
+    Function to get user input for SQL query and execute it, with table/column suggestions.
 
     Returns:
         st.session_state.query_result(pd.DataFrame): The result of the executed query, or None if no query was entered.
     """
     st.subheader("Query Data")
-    sql_query = st.text_area("Enter your SQL query:", height=100, key="sql_input")
+    st.caption("Type your SQL query below and press \"Ctrl + Enter\" to run it.")
+    # Define SQL completions based on loaded tables and columns
+    sql_completions()
+    
+    # Define action to submit written query. Ctrl + Enter or mouse click
+    query_btn = [{
+        "name": "Run",
+        "feather": "Play",
+        "primary": True,
+        "hasText": True,
+        "showWithIcon": True,
+        "commands": ["saveState","submit"],
+        "style": {"bottom": "0.44rem", "right": "0.4rem"},
+        "alwaysOn": True
+    }]
 
-    if st.button("Run Query"):
-        if sql_query:
-            try:
-                #run query
-                st.session_state.query_result=None
-                st.session_state.edited_df=None
-                result_df = run_query(st.session_state.con, sql_query)
-                # Reset index to start from 1 for query results
-                result_df.index = range(1, len(result_df) + 1)
-                st.session_state.query_result = result_df
-                st.success("Query executed successfully!")
-                return st.session_state.query_result
-            #catch exception of wrong table name and update command
-            except Exception as e:
-                if "Catalog Error: Table with name" in str(e):
-                    st.error("Table not existing. Please check table names in your query.")
-                elif "Can only update base table" in str(e):
-                    st.error("Update not available. Please consider a different select statement and the edit mode.")
-                else:
-                    st.error(f"Error executing query: {str(e)}")
-        else:
-            st.warning("Please enter a SQL query.")
+    # Define code editor options
+    sql_query_input = code_editor(
+        code=st.session_state.query_statement,
+        lang='sql',
+        options={"enableBasicAutocompletion": True, "enableLiveAutocompletion": True},
+        completions=st.session_state.completions,
+        height=[5, 7],
+        buttons=query_btn,
+        shortcuts="vscode",
+        focus=True,
+        props={"highlightActiveLine": True},
+        key=f'sql_query_{len(st.session_state.completions)}',
+        allow_reset=False
+    )
+
+    # Get SQL query from code editor once sumitted
+    if sql_query_input["text"] != st.session_state.query_statement and sql_query_input["text"] != "":
+        st.session_state.query_statement = sql_query_input["text"]
+
+    # Button to run query
+    #if st.button("Run Query"):
+    if st.session_state.query_statement:
+        try:
+            # Run query
+            st.session_state.query_result = None
+            st.session_state.edited_df = None
+            result_df = run_query(st.session_state.con, st.session_state.query_statement)
+            # Reset index to start from 1 for query results
+            result_df.index = range(1, len(result_df) + 1)
+            st.session_state.query_result = result_df
+            st.success("Query executed successfully!")
+        # Catch exception of wrong table name and update command
+        except Exception as e:
+            if "Catalog Error: Table with name" in str(e):
+                st.error("Table not existing. Please check table names in your query.")
+            elif "Can only update base table" in str(e):
+                st.error("Update not available. Please consider a different select statement and the edit mode.")
+            else:
+                st.error(f"Error executing query: {str(e)}")
+    #:
+    #    st.warning("Please enter a SQL query.")
+
 
 def run_query(con, sql_query):
     """
@@ -399,36 +446,37 @@ def run_query(con, sql_query):
     Returns:
         result(pd.DataFrame): The result of the SQL query as a DataFrame.
     """
-
-    #execute sql query
+    # Execute SQL query
     result = con.execute(sql_query).fetchdf()
     return result
+
 
 def query_result():
     """
     Displays the query result and allows for editing and exporting of data.
 
     Returns:
-        st.session_state.query_result,st.session_state.export_df(Tuple): A tuple containing the query result dataframe and the export dataframe.
+        st.session_state.query_result, st.session_state.export_df(Tuple): A tuple containing the query result dataframe and the export dataframe.
     """
     st.subheader("Query Result")
-    #add a toggle for edit mode
+    # Add a toggle for edit mode
     edit_mode = st.toggle("Edit Mode")
-    #manage the edit mode
+    # Manage the edit mode
     if edit_mode:
         st.session_state.edited_df = st.data_editor(st.session_state.query_result, num_rows="dynamic")
     else:
         if st.session_state.edited_df is not None:
-            st.session_state.query_result=st.session_state.edited_df.copy()
+            st.session_state.query_result = st.session_state.edited_df.copy()
         st.dataframe(st.session_state.query_result)
 
-    #Prepare dataframe for export data
+    # Prepare dataframe for export data
     if st.session_state.edited_df is not None:
-        st.session_state.export_df=st.session_state.edited_df.copy()
+        st.session_state.export_df = st.session_state.edited_df.copy()
     else:
-        st.session_state.export_df=st.session_state.query_result.copy()
+        st.session_state.export_df = st.session_state.query_result.copy()
 
-    return st.session_state.query_result,st.session_state.export_df
+    return st.session_state.query_result, st.session_state.export_df
+
 
 def data_download(file_ext):
     """
@@ -440,7 +488,6 @@ def data_download(file_ext):
     Returns:
         st.download_button: Download button component that allows the user to download the selected file format.
     """
-
     col1, col2 = st.columns(2)
     with col1:
         with st.popover("Data Download"):
@@ -449,8 +496,8 @@ def data_download(file_ext):
             selected_format = st.selectbox("Select file format:", file_formats)
 
             # Delimiter and quoting options (for CSV)
-            if selected_format in ['csv','txt']:
-                header = st.selectbox("Header:",("Y", "N"))
+            if selected_format in ['csv', 'txt']:
+                header = st.selectbox("Header:", ("Y", "N"))
                 delimiter = st.text_input("Delimiter:", max_chars=1, value=",")
                 quoting_options = {
                     'QUOTE_ALL': csv.QUOTE_ALL,
@@ -459,16 +506,18 @@ def data_download(file_ext):
                     'QUOTE_NONE': csv.QUOTE_NONE
                 }
                 quoting = st.selectbox("Quoting:", list(quoting_options.keys()))
-                head=True if header == 'Y' else False
+                head = True if header == 'Y' else False
 
-                file_content = df_to_file(st.session_state.export_df, selected_format,
-                                        sep=delimiter, quoting=quoting_options[quoting],header=head)
-            #manage xlsx download
-            elif selected_format =='xlsx':
-                header = st.selectbox("Header:",("Y", "N"))
-                head=True if header == 'Y' else False
-                file_content = df_to_file(st.session_state.export_df, selected_format,header=head)
-            #manage other file download
+                file_content = df_to_file(
+                    st.session_state.export_df, selected_format,
+                    sep=delimiter, quoting=quoting_options[quoting], header=head
+                )
+            # Manage XLSX download
+            elif selected_format == 'xlsx':
+                header = st.selectbox("Header:", ("Y", "N"))
+                head = True if header == 'Y' else False
+                file_content = df_to_file(st.session_state.export_df, selected_format, header=head)
+            # Manage other file download
             else:
                 file_content = df_to_file(st.session_state.export_df, selected_format)
 
@@ -491,6 +540,7 @@ def data_download(file_ext):
                 mime=mime_type,
             )
 
+
 def df_to_file(df, file_format, **kwargs):
     """
     Convert DataFrame to various file formats.
@@ -503,48 +553,100 @@ def df_to_file(df, file_format, **kwargs):
     Returns:
         bytes: The DataFrame converted to the specified format.
     """
-
-    #create the buffer
+    # Create the buffer
     buffer = BytesIO()
 
     try:
-        #manage csv and txt files
-        if file_format in ['csv','txt']:
+        # Manage CSV and TXT files
+        if file_format in ['csv', 'txt']:
             kwargs['dtype'] = str
             try:
                 df.to_csv(buffer, index=False, **kwargs)
-            #Catch specific CSV writing errors
+            # Catch specific CSV writing errors
             except csv.Error as e:
                 if "need to escape" in str(e):
                     st.warning("Special character found in the data.  \nPlease select a different quoting option.")
                 else:
                     raise ValueError(f"{file_format} writing error: {e}")
-        #manage xlsx files
+        # Manage XLSX files
         elif file_format == 'xlsx':
             df.to_excel(buffer, index=False, engine='openpyxl', **kwargs)
-        #manage json files
+        # Manage JSON files
         elif file_format == 'json':
             df.to_json(buffer, orient='records', **kwargs)
-        #manage parquet files
+        # Manage Parquet files
         elif file_format == 'parquet':
             df.to_parquet(buffer, index=False, engine='pyarrow', **kwargs)
-        #manage xml files
+        # Manage XML files
         elif file_format == 'xml':
             df.to_xml(buffer, index=False, **kwargs)
-        #manage avro files
+        # Manage Avro files
         elif file_format == 'avro':
             pdx.to_avro(buffer, df)
-        #get unsupported files error
+        # Get unsupported files error
         else:
             raise ValueError(f"Unsupported file format: {file_format}")
-    #catch errors for df to file conversion
+    # Catch errors for df to file conversion
     except Exception as e:
         st.error(e)
         st.warning(f"{file_format} export not available for your data.  \nPlease select a different format.")
 
-    #return the buffer
+    # Return the buffer
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def sql_completions():
+    """
+    Function to generate SQL completions for the code editor.
+
+    Returns:
+        None
+    """
+    try:
+        # Get connection
+        con = st.session_state.con
+        # Get loaded tables list
+        tab_list = st.session_state.tables
+        # Reset completions list
+        st.session_state.completions = []
+
+        # Loop all tables and get columns names
+        for table_name in tab_list:
+            # Ensure table_name is a non-empty string before proceeding
+            if isinstance(table_name, str) and table_name:
+                # Add table name completion
+                st.session_state.completions.append({
+                    "caption": table_name,
+                    "value": f'"{table_name}"',  # Add quotes for safety
+                    "meta": "table",
+                    "name": f"table_{table_name}",  # Added unique name
+                    "score": 200
+                })
+
+                # Get column names for the table
+                try:
+                    # Use PRAGMA table_info to fetch column metadata
+                    columns_df = con.execute(f'PRAGMA table_info("{table_name}")').fetchdf()
+                    if not columns_df.empty and 'name' in columns_df.columns:
+                        for column_name in columns_df['name']:
+                            # Ensure column_name is a non-empty string
+                            if isinstance(column_name, str) and column_name:
+                                # Add column name completion
+                                st.session_state.completions.append({
+                                    "caption": column_name,
+                                    "value": f'"{column_name}"',  # Add quotes for safety
+                                    "meta": "column",
+                                    "name": f"col_{table_name}_{column_name}",  # Added unique name
+                                    "score": 100
+                                })
+                except Exception as e:
+                    st.warning(f"Could not fetch columns for table '{table_name}': {e}")
+                    pass
+    except Exception as e:
+        st.warning(f"Could not generate SQL suggestions: {e}")
+        pass
+
 
 def main():
     """
@@ -557,17 +659,16 @@ def main():
     Returns:
         None
     """
-
-    #set page config
-    st.set_page_config(page_title='DataQuery', page_icon=':o:', layout="centered")
-    #set title and subheader
+    # Set page config
+    st.set_page_config(page_title='DataQuery', page_icon=':o:', layout="wide")
+    # Set title and subheader
     st.title("DataQuery")
     st.subheader("Preview, query, edit and export data files")
 
-    #supported file extensions
-    file_ext=['avro','csv', 'json','parquet','txt', 'xlsx', 'xml','zip']
-    #number of rows read for preview
-    num_rows=5
+    # Supported file extensions
+    file_ext = ['avro', 'csv', 'json', 'parquet', 'txt', 'xlsx', 'xml', 'zip']
+    # Number of rows read for preview
+    num_rows = 5
 
     # Initialize session state variables
     if 'query_result' not in st.session_state:
@@ -581,37 +682,44 @@ def main():
     if 'edited_df' not in st.session_state:
         st.session_state.edited_df = None
     if 'export_df' not in st.session_state:
-        st.session_state.export_df=None
+        st.session_state.export_df = None
+    if 'completions' not in st.session_state:
+        st.session_state.completions = []
+    if 'query_statement' not in st.session_state:
+        st.session_state.query_statement = ''
 
-    #files upload
+    # Files upload
     upload_files(file_ext)
 
-    #if files uploaded
+    # If files uploaded
     if st.session_state.uploaded_files:
-        #load files to db
+        # Load files to db
         files_to_db(file_ext)
 
-        #if tables created
+        # If tables created
         if st.session_state.tables:
             # Display data preview for each table
             data_preview(num_rows=num_rows)
-            #provide sql query section
+            # Provide SQL query section
             get_query()
 
-        #if query result
+        # If query result
         if st.session_state.query_result is not None:
-            #display query result
+            # Display query result
             query_result()
-                
-            #display data download section
+
+            # Display data download section
             data_download(file_ext)
     else:
-        #reset session state variables
+        # Reset session state variables
         st.session_state.tables = {}
         st.session_state.query_result = None
-        st.session_state.export_df= None
-        st.session_state.uploaded_files=[]
+        st.session_state.export_df = None
+        st.session_state.uploaded_files = []
         st.session_state.edited_df = None
+        st.session_state.completions = []
+        st.session_state.query_statement = ''
+
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,8 @@
-streamlit
+streamlit==1.44.1
+streamlit_code_editor==0.1.22
+duckdb==1.2.2
 numpy==1.26.4
 pandas==2.2.2
-duckdb==1.0.0
 openpyxl==3.1.5
 pyarrow==16.1.0
 lxml==5.2.2
