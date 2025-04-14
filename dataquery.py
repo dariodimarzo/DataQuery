@@ -396,13 +396,16 @@ def get_query():
     sql_query_input = code_editor(
         code=st.session_state.query_statement,
         lang='sql',
-        options={"enableBasicAutocompletion": True, "enableLiveAutocompletion": True},
-        completions=st.session_state.completions,
+        shortcuts="vscode",
+        options={"enableBasicAutocompletion": True, 
+                 "enableLiveAutocompletion": True, 
+                 "showLineNumbers":True,
+                 "highlightActiveLine": True,
+                 "highlightSelectedWord":True},
         height=[5, 7],
         buttons=query_btn,
-        shortcuts="vscode",
         focus=True,
-        props={"highlightActiveLine": True},
+        completions=st.session_state.completions,
         key=f'sql_query_{len(st.session_state.completions)}',
         allow_reset=False
     )
@@ -422,7 +425,7 @@ def get_query():
             # Reset index to start from 1 for query results
             result_df.index = range(1, len(result_df) + 1)
             st.session_state.query_result = result_df
-            st.success("Query executed successfully!")
+            #st.success("Query executed successfully!")
         # Catch exception of wrong table name and update command
         except Exception as e:
             if "Catalog Error: Table with name" in str(e):
