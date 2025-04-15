@@ -411,11 +411,12 @@ def get_query():
     )
 
     # Get SQL query from code editor once sumitted
-    if sql_query_input["text"] != st.session_state.query_statement and sql_query_input["text"] != "":
+    if sql_query_input["text"] != st.session_state.query_statement:
         st.session_state.query_statement = sql_query_input["text"]
 
     # Button to run query
     #if st.button("Run Query"):
+    st.write(st.session_state.query_statement)
     if st.session_state.query_statement.strip() != "":
         try:
             # Run query
