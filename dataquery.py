@@ -562,7 +562,7 @@ def df_to_file(df, file_format, **kwargs):
     try:
         # Manage CSV and TXT files
         if file_format in ['csv', 'txt']:
-            kwargs['dtype'] = str
+            #kwargs['dtype'] = str
             try:
                 df.to_csv(buffer, index=False, **kwargs)
             # Catch specific CSV writing errors
