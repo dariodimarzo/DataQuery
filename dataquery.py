@@ -414,32 +414,32 @@ def get_query():
     if sql_query_input["text"] != st.session_state.query_statement:
         st.session_state.query_statement = sql_query_input["text"]
 
-    # Button to run query
-    #if st.button("Run Query"):
-    if st.session_state.query_statement.strip() != "":
-        try:
-            # Run query
+        # Button to run query
+        #if st.button("Run Query"):
+        if st.session_state.query_statement.strip() != "":
+            try:
+                # Run query
+                st.session_state.query_result = None
+                st.session_state.edited_df = None
+                result_df = run_query(st.session_state.con, st.session_state.query_statement)
+                #check if query got result
+                if result_df is not None and not result_df.empty:
+                    # Reset index to start from 1 for query results
+                    result_df.index = range(1, len(result_df) + 1)
+                    st.session_state.query_result = result_df
+                    #st.success("Query executed successfully!")
+            # Catch exception of wrong table name and update command
+            except Exception as e:
+                if "Catalog Error: Table with name" in str(e):
+                    st.error("Table not existing. Please check table names in your query.")
+                elif "Can only update base table" in str(e):
+                    st.error("Update not available. Please consider a different select statement and the edit mode.")
+                else:
+                    st.error(f"Error executing query: {str(e)}")
+        else:
             st.session_state.query_result = None
-            st.session_state.edited_df = None
-            result_df = run_query(st.session_state.con, st.session_state.query_statement)
-            #check if query got result
-            if result_df is not None and not result_df.empty:
-                # Reset index to start from 1 for query results
-                result_df.index = range(1, len(result_df) + 1)
-                st.session_state.query_result = result_df
-                #st.success("Query executed successfully!")
-        # Catch exception of wrong table name and update command
-        except Exception as e:
-            if "Catalog Error: Table with name" in str(e):
-                st.error("Table not existing. Please check table names in your query.")
-            elif "Can only update base table" in str(e):
-                st.error("Update not available. Please consider a different select statement and the edit mode.")
-            else:
-                st.error(f"Error executing query: {str(e)}")
-    else:
-        st.session_state.query_result = None
-    #:
-    #    st.warning("Please enter a SQL query.")
+        #:
+        #    st.warning("Please enter a SQL query.")
 
 
 def run_query(con, sql_query):
