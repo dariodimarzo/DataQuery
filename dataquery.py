@@ -422,10 +422,12 @@ def get_query():
             st.session_state.query_result = None
             st.session_state.edited_df = None
             result_df = run_query(st.session_state.con, st.session_state.query_statement)
-            # Reset index to start from 1 for query results
-            result_df.index = range(1, len(result_df) + 1)
-            st.session_state.query_result = result_df
-            #st.success("Query executed successfully!")
+            #check if query got result
+            if result_df is not None and not result_df.empty:
+                # Reset index to start from 1 for query results
+                result_df.index = range(1, len(result_df) + 1)
+                st.session_state.query_result = result_df
+                #st.success("Query executed successfully!")
         # Catch exception of wrong table name and update command
         except Exception as e:
             if "Catalog Error: Table with name" in str(e):
@@ -452,7 +454,10 @@ def run_query(con, sql_query):
         result(pd.DataFrame): The result of the SQL query as a DataFrame.
     """
     # Execute SQL query
-    result = con.execute(sql_query).fetchdf()
+    try:
+        result = con.execute(sql_query).fetchdf()
+    except AttributeError as e:
+        return None
     return result
 
 
