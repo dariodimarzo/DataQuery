@@ -416,7 +416,7 @@ def get_query():
 
     # Button to run query
     #if st.button("Run Query"):
-    if st.session_state.query_statement:
+    if st.session_state.query_statement.strip() != "":
         try:
             # Run query
             st.session_state.query_result = None
@@ -434,6 +434,8 @@ def get_query():
                 st.error("Update not available. Please consider a different select statement and the edit mode.")
             else:
                 st.error(f"Error executing query: {str(e)}")
+    else:
+        st.session_state.query_result = None
     #:
     #    st.warning("Please enter a SQL query.")
 
