@@ -416,7 +416,6 @@ def get_query():
 
     # Button to run query
     #if st.button("Run Query"):
-    st.write(st.session_state.query_statement)
     if st.session_state.query_statement.strip() != "":
         try:
             # Run query
