@@ -129,7 +129,7 @@ def files_to_db(file_ext):
                 if loaded_tables:
                     for table in loaded_tables:
                         st.session_state.tables[table] = file.name
-                    loaded_tab += f"Loaded {file.name} as table(s): {', '.join(loaded_tables)}  \n"
+                    loaded_tab += f"Loaded {file.name} as table(s): \n {'\n - '.join(loaded_tables)}  \n"
 
     # Display success and warning messages
     if loaded_tab != "":
@@ -162,9 +162,16 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
     if file_extension in ['csv', 'txt', 'xlsx']:
         with st.expander(f"File Settings - {label_obj}"):
             if file_extension == 'xlsx':
+                selected_sheets = st.multiselect(
+                    f"Sheets to load from {file_name}",
+                    sheet_names,
+                    default=sheet_names,
+                    key=f"sheets_{archive_name}_{file_name}",
+                )
+                options['selected_sheets'] = selected_sheets
                 left_column, right_column = st.columns(2)
                 options['sheets'] = {}
-                for index, sheet in enumerate(sheet_names):
+                for index, sheet in enumerate(selected_sheets):
                     with left_column if index % 2 == 0 else right_column:
                         options['sheets'][sheet] = {
                             'header': st.selectbox(
@@ -172,7 +179,13 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
                                 [0, None],
                                 format_func=lambda x: "Yes" if x == 0 else "No",
                                 key=f"header_{archive_name}_{file_name}_{sheet}",
-                            )
+                            ),
+                            'alias': st.text_input(
+                                f"Table alias for {file_name} - {sheet}",
+                                value="",
+                                key=f"alias_{archive_name}_{file_name}_{sheet}",
+                                help="Leave empty to use default name",
+                            ),
                         }
             elif file_extension in ['csv', 'txt']:
                 left_column, right_column = st.columns(2)
@@ -239,8 +252,11 @@ def files_to_table(file, con, options=None, archive_name=None):
         elif file_extension == 'xlsx':
             xls = pd.ExcelFile(file)
             dfs = {}
-            # Loop all sheets and in case of no header, rename columns from simple integer to col_integer
+            selected_sheets = options.get('selected_sheets', xls.sheet_names)
+            # Loop selected sheets and in case of no header, rename columns from simple integer to col_integer
             for sheet_name in xls.sheet_names:
+                if sheet_name not in selected_sheets:
+                    continue
                 sheet_options = options.get('sheets', {}).get(sheet_name, {})
                 dfs[sheet_name] = pd.read_excel(file, sheet_name=sheet_name, header=sheet_options.get('header', 0))
                 if sheet_options.get('header', 0) is None:
@@ -266,9 +282,21 @@ def files_to_table(file, con, options=None, archive_name=None):
 
         # Register dataframes into DuckDB
         if file_extension == 'xlsx':
+            used_names = {}
             for sheet_name, df in dfs.items():
-                sheet_name = sheet_name.lower()
-                table_name = register_dataframe(con, df, f"{file_nm}_{sheet_name}")
+                sheet_options = options.get('sheets', {}).get(sheet_name, {})
+                alias = sheet_options.get('alias', '').strip()
+                if alias:
+                    resolved_name = clean_table_name(alias)
+                else:
+                    resolved_name = clean_table_name(f"{file_nm}_{sheet_name.lower()}")
+                # Check for duplicate table names
+                if resolved_name in used_names:
+                    st.error(f"Duplicate alias: sheet \"{sheet_name}\" resolves to table \"{resolved_name}\", "
+                             f"already used by sheet \"{used_names[resolved_name]}\". Skipping.")
+                    continue
+                used_names[resolved_name] = sheet_name
+                table_name = register_dataframe(con, df, resolved_name)
                 table_names.append(table_name)
         else:
             table_name = register_dataframe(con, df, file_nm)

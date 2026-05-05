@@ -9,7 +9,7 @@ Try it on *Streamlit*: [here](https://dataquery.streamlit.app/).
 ## Features
 
 - **Load data files of various formats (avro, csv, json, parquet, txt, xlsx, xml)**  
-  Files can be loaded also as zip archives. All sheets from xlsx file will be loaded. For csv, txt and xlsx files, header, delimiter and quoting settings can be defined  
+  Files can be loaded also as zip archives. For xlsx files, select which sheets to load and optionally assign custom table aliases. For csv, txt and xlsx files, header, delimiter and quoting settings can be defined  
 - **Preview data of every file loaded**  
   Get a preview of the data loaded and, if needed, refine data loading settings  
 - **Query loaded data in sql language**  
