@@ -115,7 +115,7 @@ def files_to_db(file_ext):
                                     if loaded_tables:
                                         for table in loaded_tables:
                                             st.session_state.tables[table] = extracted_file.name
-                                        loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): {', '.join(loaded_tables)}  \n"
+                                        loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s): \n {'  '.join(loaded_tables)}  \n"
                             else:
                                 excluded_tab += f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
             # Manage single files
@@ -129,7 +129,7 @@ def files_to_db(file_ext):
                 if loaded_tables:
                     for table in loaded_tables:
                         st.session_state.tables[table] = file.name
-                    loaded_tab += f"Loaded {file.name} as table(s): \n {'\n - '.join(loaded_tables)}  \n"
+                    loaded_tab += f"Loaded {file.name} as table(s): \n {' - '.join(loaded_tables)}  \n"
 
     # Display success and warning messages
     if loaded_tab != "":
