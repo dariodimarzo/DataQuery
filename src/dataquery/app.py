@@ -87,6 +87,7 @@ def files_to_db(file_ext):
     loaded_tab = ""
     excluded_tab = ""
     file_options = {}
+    new_tables_list = []
 
     for file in st.session_state.uploaded_files:
         if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
@@ -115,6 +116,7 @@ def files_to_db(file_ext):
                                     if loaded_tables:
                                         for table in loaded_tables:
                                             st.session_state.tables[table] = extracted_file.name
+                                            new_tables_list.append(table)
                                         tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
                                         loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s):{tables_list}  \n\n"
                             else:
@@ -130,8 +132,15 @@ def files_to_db(file_ext):
                 if loaded_tables:
                     for table in loaded_tables:
                         st.session_state.tables[table] = file.name
+                        new_tables_list.append(table)
                     tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
                     loaded_tab += f"Loaded {file.name} as table(s):{tables_list}  \n\n"
+
+    # Cleanup obsolete tables (renamed aliases or unselected sheets)
+    tables_to_remove = [table for table in list(st.session_state.tables.keys()) if table not in new_tables_list]
+    for table in tables_to_remove:
+        remove_view(st.session_state.con, table)
+        del st.session_state.tables[table]
 
     # Display success and warning messages
     if loaded_tab != "":
