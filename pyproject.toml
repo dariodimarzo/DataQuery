@@ -10,9 +10,9 @@ readme = "README.md"
 license = {text = "GPL-3.0-only"}
 requires-python = ">=3.10"
 dependencies = [
-    "streamlit>=1.44",
+    "streamlit>=1.56",
     "streamlit-code-editor>=0.1.22",
-    "duckdb>=1.2",
+    "duckdb>=1.5",
     "numpy>=1.26",
     "pandas>=2.2",
     "openpyxl>=3.1",
