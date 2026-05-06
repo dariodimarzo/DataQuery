@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataquery"
+version = "0.1.0"
+description = "A web app for preview, query, edit and export data files."
+readme = "README.md"
+license = {text = "GPL-3.0-only"}
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.44",
+    "streamlit-code-editor>=0.1.22",
+    "duckdb>=1.2",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "pyarrow>=16.1",
+    "lxml>=5.2",
+    "python-snappy>=0.7",
+    "pandavro>=1.8",
+]
+
+[project.scripts]
+dataquery = "dataquery.cli:main"
+
+[project.urls]
+Homepage = "https://dataquery.streamlit.app/"

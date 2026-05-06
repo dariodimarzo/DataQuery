@@ -23,18 +23,30 @@ All the tasks are managed in memory, no data are saved on the server.
 
 ## Installation
 
-To install the required dependencies you can use `pip`:
+Install the package:
 
 ```sh
-pip install -r requirements.txt
+pip install .
+```
+
+Or install in editable mode for development:
+
+```sh
+pip install -e .
 ```
 
 ## Run
 
-To run the the app you can use `streamlit`:
+Run with the console entry point:
 
 ```sh
-streamlit run dataquery.py
+dataquery
+```
+
+Or with Streamlit directly:
+
+```sh
+streamlit run src/dataquery/app.py
 ```
 
 ## License
