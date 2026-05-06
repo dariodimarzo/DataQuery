@@ -170,35 +170,36 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
     options = {}
     label_obj = f"{file_name}" if not archive_name else f"{archive_name} - {file_name}"
     file_extension = file_name.split('.')[-1].lower()
-    if file_extension in ['csv', 'txt', 'xlsx']:
-        with st.expander(f"File Settings - {label_obj}"):
-            if file_extension == 'xlsx':
-                selected_sheets = st.multiselect(
-                    f"Sheets to load from {file_name}",
-                    sheet_names,
-                    default=sheet_names,
-                    key=f"sheets_{archive_name}_{file_name}",
-                )
-                options['selected_sheets'] = selected_sheets
-                left_column, right_column = st.columns(2)
-                options['sheets'] = {}
-                for index, sheet in enumerate(selected_sheets):
-                    with left_column if index % 2 == 0 else right_column:
-                        options['sheets'][sheet] = {
-                            'header': st.selectbox(
-                                f"Header for {file_name} - {sheet}",
-                                [0, None],
-                                format_func=lambda x: "Yes" if x == 0 else "No",
-                                key=f"header_{archive_name}_{file_name}_{sheet}",
-                            ),
-                            'alias': st.text_input(
-                                f"Table alias for {file_name} - {sheet}",
-                                value="",
-                                key=f"alias_{archive_name}_{file_name}_{sheet}",
-                                help="Leave empty to use default name",
-                            ),
-                        }
-            elif file_extension in ['csv', 'txt']:
+    
+    with st.expander(f"File Settings - {label_obj}"):
+        if file_extension == 'xlsx':
+            selected_sheets = st.multiselect(
+                f"Sheets to load from {file_name}",
+                sheet_names,
+                default=sheet_names,
+                key=f"sheets_{archive_name}_{file_name}",
+            )
+            options['selected_sheets'] = selected_sheets
+            left_column, right_column = st.columns(2)
+            options['sheets'] = {}
+            for index, sheet in enumerate(selected_sheets):
+                with left_column if index % 2 == 0 else right_column:
+                    options['sheets'][sheet] = {
+                        'header': st.selectbox(
+                            f"Header for {file_name} - {sheet}",
+                            [0, None],
+                            format_func=lambda x: "Yes" if x == 0 else "No",
+                            key=f"header_{archive_name}_{file_name}_{sheet}",
+                        ),
+                        'alias': st.text_input(
+                            f"Table alias for {file_name} - {sheet}",
+                            value="",
+                            key=f"alias_{archive_name}_{file_name}_{sheet}",
+                            help="Leave empty to use default name",
+                        ),
+                    }
+        else:
+            if file_extension in ['csv', 'txt']:
                 left_column, right_column = st.columns(2)
                 with left_column:
                     options['header'] = st.selectbox(
@@ -220,6 +221,14 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
                     )
                     options['quotechar'] = st.text_input(f"Quote character", '"', key=f"quote_{archive_name}_{file_name}")
                     options['dtype'] = "str"
+            
+            options['alias'] = st.text_input(
+                f"Table alias for {file_name}",
+                value="",
+                key=f"alias_{archive_name}_{file_name}",
+                help="Leave empty to use default name",
+            )
+            
     return options
 
 
@@ -310,7 +319,13 @@ def files_to_table(file, con, options=None, archive_name=None):
                 table_name = register_dataframe(con, df, resolved_name)
                 table_names.append(table_name)
         else:
-            table_name = register_dataframe(con, df, file_nm)
+            alias = options.get('alias', '').strip() if options else ''
+            if alias:
+                resolved_name = clean_table_name(alias)
+            else:
+                resolved_name = clean_table_name(file_nm)
+                
+            table_name = register_dataframe(con, df, resolved_name)
             table_names.append(table_name)
 
         return table_names
@@ -431,6 +446,9 @@ def get_query():
         "alwaysOn": True
     }]
 
+    import hashlib
+    comp_hash = hashlib.md5(str(st.session_state.completions).encode()).hexdigest()
+
     # Define code editor options
     sql_query_input = code_editor(
         code=st.session_state.query_statement,
@@ -445,7 +463,7 @@ def get_query():
         buttons=query_btn,
         focus=True,
         completions=st.session_state.completions,
-        key=f'sql_query_{len(st.session_state.completions)}',
+        key=f'sql_query_{comp_hash}',
         allow_reset=False
     )
 
