@@ -376,13 +376,6 @@ def clean_table_name(name):
     # Remove all other special characters
     name = sub(r'[^a-zA-Z0-9_]', '', name)
 
-    # Add an underscore if the name starts with a number
-    if name[0].isdigit():
-        name = f"_{name}"
-    # Add an underscore if the name ends with a number
-    if name[-1].isdigit():
-        name = f"{name}_"
-
     return name
 
 
