@@ -616,8 +616,11 @@ def data_download(file_ext):
     Returns:
         st.download_button: Download button component that allows the user to download the selected file format.
     """
-    col1, col2, _ = st.columns([1, 1, 6])
+    col1, col2, _ = st.columns([1, 1, 5])
     with col1:
+        # Provide save of the current query result as a new session table
+        save_as_table()
+    with col2:
         with st.popover("Data Download"):
             # File format selection
             file_formats = [item for item in file_ext if item != 'zip']
@@ -668,9 +671,7 @@ def data_download(file_ext):
                 mime=mime_type,
             )
 
-    with col2:
-        # Provide save of the current query result as a new session table
-        save_as_table()
+    
 
 
 def save_as_table():
