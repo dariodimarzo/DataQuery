@@ -18,6 +18,10 @@ Try it on *Streamlit*: [here](https://dataquery.streamlit.app/).
   Edit your data applying changes directly in the table that shows you query result  
 - **Export query results on file, in various format (avro, csv, json, parquet, txt, xlsx, xml)**  
   For csv, txt and xlsx file define setting for header, delimiter and quoting settings  
+- **Save query results as a session table**  
+  After running a query, save its result (including manual edits) as a new named table, reusable in further queries  
+- **Save the whole session**  
+  Download all session tables as a single ZIP of parquet files. The bundle can be re-uploaded to restore the session  
 
 All the tasks are managed in memory, no data are saved on the server.  
 

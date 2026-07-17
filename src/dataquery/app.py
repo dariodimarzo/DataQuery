@@ -137,7 +137,9 @@ def files_to_db(file_ext):
                     loaded_tab += f"Loaded {file.name} as table(s):{tables_list}  \n\n"
 
     # Cleanup obsolete tables (renamed aliases or unselected sheets)
-    tables_to_remove = [table for table in list(st.session_state.tables.keys()) if table not in new_tables_list]
+    saved_tables = st.session_state.get('saved_tables', set())
+    tables_to_remove = [table for table in list(st.session_state.tables.keys())
+                        if table not in new_tables_list and table not in saved_tables]
     for table in tables_to_remove:
         remove_view(st.session_state.con, table)
         del st.session_state.tables[table]
@@ -415,6 +417,69 @@ def data_preview(num_rows=5):
         return st.dataframe(preview_df)
 
 
+def build_session_zip():
+    """
+    Builds a ZIP archive containing one parquet file per session table.
+
+    The archive is built entirely in memory (BytesIO): no data is ever written
+    to the server filesystem, respecting the application's data policy.
+    Each table is exported as "<table_name>.parquet" so that re-uploading the
+    ZIP restores the session with the same table names.
+
+    Returns:
+        bytes: The ZIP archive as bytes, or None if it could not be built.
+    """
+    con = st.session_state.con
+    zip_buffer = BytesIO()
+
+    try:
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Write each session table as a parquet file
+            for table_name in st.session_state.tables:
+                try:
+                    df = con.execute(f'SELECT * FROM "{table_name}"').fetchdf()
+                except Exception as e:
+                    st.warning(f"Could not export table '{table_name}': {e}")
+                    continue
+                parquet_buffer = BytesIO()
+                df.to_parquet(parquet_buffer, index=False, engine='pyarrow')
+                zf.writestr(f"{table_name}.parquet", parquet_buffer.getvalue())
+    except Exception as e:
+        st.error(f"Could not build session file: {e}")
+        return None
+
+    return zip_buffer.getvalue()
+
+
+def session_export():
+    """
+    Displays a popover to save the current session as an in-memory ZIP of parquet files.
+
+    The bundle includes every table currently in the session (loaded files and any
+    tables saved from query results) and is generated in RAM when the popover is
+    opened; nothing is persisted on the server.
+
+    Returns:
+        None
+    """
+    with st.popover("Save Session"):
+        st.caption(
+            "Save all session tables as a ZIP of parquet files.  \n"
+            "Re-upload the ZIP to restore the session."
+        )
+
+        # Build the ZIP bundle in memory (on popover open)
+        zip_bytes = build_session_zip()
+
+        if zip_bytes:
+            st.download_button(
+                label="Download",
+                data=zip_bytes,
+                file_name="dataquery_session.zip",
+                mime="application/zip",
+            )
+
+
 def get_query():
     """
     Function to get user input for SQL query and execute it, with table/column suggestions.
@@ -473,8 +538,8 @@ def get_query():
                 st.session_state.edited_df = None
                 result_df = run_query(st.session_state.con, st.session_state.query_statement)
                 #check if query got result
-                if result_df is not None and not result_df.empty:
-                    # Reset index to start from 1 for query results
+                if result_df is not None:
+                    # Reset index to start from 1 for query results (empty range if no rows)
                     result_df.index = range(1, len(result_df) + 1)
                     st.session_state.query_result = result_df
                     #st.success("Query executed successfully!")
@@ -519,6 +584,9 @@ def query_result():
         st.session_state.query_result, st.session_state.export_df(Tuple): A tuple containing the query result dataframe and the export dataframe.
     """
     st.subheader("Query Result")
+    # Notify when the query ran successfully but returned no rows
+    if st.session_state.query_result is not None and st.session_state.query_result.empty:
+        st.info("There is no data to display.")
     # Add a toggle for edit mode
     edit_mode = st.toggle("Edit Mode")
     # Manage the edit mode
@@ -548,7 +616,7 @@ def data_download(file_ext):
     Returns:
         st.download_button: Download button component that allows the user to download the selected file format.
     """
-    col1, col2 = st.columns(2)
+    col1, col2, _ = st.columns([1, 1, 6])
     with col1:
         with st.popover("Data Download"):
             # File format selection
@@ -593,12 +661,54 @@ def data_download(file_ext):
             mime_type = mime_types.get(selected_format, 'application/octet-stream')
 
             # Download button
-            return st.download_button(
+            st.download_button(
                 label=f"Download",
                 data=file_content,
                 file_name=file_name,
                 mime=mime_type,
             )
+
+    with col2:
+        # Provide save of the current query result as a new session table
+        save_as_table()
+
+
+def save_as_table():
+    """
+    Saves the current query result (export_df) as a new named table in the session.
+
+    The table is registered as a view in DuckDB and tracked in
+    st.session_state.saved_tables so it survives reruns (it is excluded from the
+    file-cleanup logic) and is included in the session export.
+
+    Returns:
+        None
+    """
+    with st.popover("Save as Table"):
+        st.caption("Save the current query result as a new session table.")
+        new_name = st.text_input(
+            "Table name",
+            value="",
+            key="save_as_table_name",
+            help="Name for the new table created from the current query result",
+        )
+        if st.button("Save", key="save_as_table_btn"):
+            if st.session_state.get('export_df') is None:
+                st.warning("No query result to save.")
+                return
+            resolved_name = clean_table_name(new_name)
+            if not resolved_name:
+                st.warning("Please provide a valid table name.")
+                return
+            if resolved_name in st.session_state.tables:
+                st.error(f"Table '{resolved_name}' already exists. Choose a different name.")
+                return
+            # Register a snapshot of the current result as a view in DuckDB
+            register_dataframe(st.session_state.con, st.session_state.export_df.copy(), resolved_name)
+            st.session_state.tables[resolved_name] = "(saved table)"
+            st.session_state.saved_tables.add(resolved_name)
+            # Refresh the app so the new table appears everywhere
+            st.rerun()
 
 
 def df_to_file(df, file_format, **kwargs):
@@ -720,7 +830,7 @@ def main():
         None
     """
     # Set page config
-    st.set_page_config(page_title='DataQuery', page_icon=':o:', layout="wide")
+    st.set_page_config(page_title='DataQuery', page_icon=":material/table:", layout="wide")
     # Set title and subheader
     st.title("DataQuery")
     st.subheader("Preview, query, edit and export data files")
@@ -747,6 +857,8 @@ def main():
         st.session_state.completions = []
     if 'query_statement' not in st.session_state:
         st.session_state.query_statement = ''
+    if 'saved_tables' not in st.session_state:
+        st.session_state.saved_tables = set()
 
     # Files upload
     upload_files(file_ext)
@@ -758,8 +870,15 @@ def main():
 
         # If tables created
         if st.session_state.tables:
+            # Persistently show tables saved from query results (like the loaded message)
+            saved_tabs = [t for t in st.session_state.tables if t in st.session_state.saved_tables]
+            if saved_tabs:
+                saved_list = ''.join([f'  \n- {t}' for t in saved_tabs])
+                st.success(f"Saved query result as table(s):{saved_list}")
             # Display data preview for each table
             data_preview(num_rows=num_rows)
+            # Provide session save (all tables, optional query result) as in-memory ZIP
+            session_export()
             # Provide SQL query section
             get_query()
 
@@ -779,6 +898,7 @@ def main():
         st.session_state.edited_df = None
         st.session_state.completions = []
         st.session_state.query_statement = ''
+        st.session_state.saved_tables = set()
 
 
 if __name__ == "__main__":
