@@ -111,14 +111,15 @@ def files_to_db(file_ext):
                                     )
 
                                     file_options[extracted_file.name] = options
-                                    # Load tables and register views in DuckDB
-                                    loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name)
-                                    if loaded_tables:
-                                        for table in loaded_tables:
-                                            st.session_state.tables[table] = extracted_file.name
-                                            new_tables_list.append(table)
-                                        tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
-                                        loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s):{tables_list}  \n\n"
+                                    # Load tables and register views in DuckDB (if enabled)
+                                    if options.get('load', True):
+                                        loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name)
+                                        if loaded_tables:
+                                            for table in loaded_tables:
+                                                st.session_state.tables[table] = extracted_file.name
+                                                new_tables_list.append(table)
+                                            tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
+                                            loaded_tab += f"Loaded {file.name} - {extracted_file.name} as table(s):{tables_list}  \n\n"
                             else:
                                 excluded_tab += f"{file.name} - {zip_info.filename} not loaded. Unsupported file format  \n"
             # Manage single files
@@ -126,15 +127,16 @@ def files_to_db(file_ext):
                 # Get file options
                 options = get_file_options(file.name, None if file_extension != 'xlsx' else pd.ExcelFile(file).sheet_names)
 
-                # Load tables and register views in DuckDB
+                # Load tables and register views in DuckDB (if enabled)
                 file_options[file.name] = options
-                loaded_tables = files_to_table(file, st.session_state.con, options)
-                if loaded_tables:
-                    for table in loaded_tables:
-                        st.session_state.tables[table] = file.name
-                        new_tables_list.append(table)
-                    tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
-                    loaded_tab += f"Loaded {file.name} as table(s):{tables_list}  \n\n"
+                if options.get('load', True):
+                    loaded_tables = files_to_table(file, st.session_state.con, options)
+                    if loaded_tables:
+                        for table in loaded_tables:
+                            st.session_state.tables[table] = file.name
+                            new_tables_list.append(table)
+                        tables_list = ''.join([f'  \n- {t}' for t in loaded_tables])
+                        loaded_tab += f"Loaded {file.name} as table(s):{tables_list}  \n\n"
 
     # Cleanup obsolete tables (renamed aliases or unselected sheets)
     saved_tables = st.session_state.get('saved_tables', set())
@@ -174,6 +176,12 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
     file_extension = file_name.split('.')[-1].lower()
     
     with st.expander(f"File Settings - {label_obj}"):
+        # Load toggle shown first, on its own row (default: yes)
+        options['load'] = st.checkbox(
+            "Load this file",
+            value=True,
+            key=f"load_{archive_name}_{file_name}",
+        )
         if file_extension == 'xlsx':
             selected_sheets = st.multiselect(
                 f"Sheets to load from {file_name}",
