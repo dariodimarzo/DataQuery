@@ -12,11 +12,11 @@ Try it on *Streamlit*: [here](https://dataquery.streamlit.app/).
   Files can be loaded also as zip archives. 
   Each file has a *Load this file* toggle to include or exclude it individually (useful to drop single files from a zip archive). 
   For xlsx files, select which sheets to load and optionally assign custom table aliases. 
-  For csv, txt and xlsx files, header, delimiter, quoting settings and table alias can be defined.
+  For csv, txt and xlsx files, header, delimiter, quoting settings and table alias can be defined.  
 - **Preview data of every file loaded**  
   Get a preview of the data loaded and, if needed, refine data loading settings  
 - **Query loaded data in sql language**  
-  Join, transform, analyze data in a relational in-memory database  
+  Join, transform, modify, analyze data in a relational in-memory database  
 - **Visual editing of the query results**  
   Edit your data applying changes directly in the table that shows you query result  
 - **Export query results on file, in various format (avro, csv, json, parquet, txt, xlsx, xml)**  

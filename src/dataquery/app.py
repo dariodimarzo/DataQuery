@@ -23,7 +23,7 @@ def upload_files(file_ext):
 
     Notes:
         - Handles file uploads via Streamlit's file uploader.
-        - Removes views from the database for files that are no longer uploaded.
+        - Removes tables from the database for files that are no longer uploaded.
     """
     # Upload files object
     uploaded_files = st.file_uploader(
@@ -35,12 +35,13 @@ def upload_files(file_ext):
 
     # Check for removed files
     removed_files = [file for file in st.session_state.uploaded_files if file not in uploaded_files]
-    # Remove views from the database for removed files
+    # Remove tables from the database for removed files
     for file in removed_files:
         tables_to_remove = [table for table, source in st.session_state.tables.items() if source == file.name]
         for table in tables_to_remove:
-            remove_view(st.session_state.con, table)
+            remove_table(st.session_state.con, table)
             del st.session_state.tables[table]
+            st.session_state.get('table_signatures', {}).pop(table, None)
         st.warning(f"Removed file: {file.name} and its associated tables")
 
     # Update the list of uploaded files
@@ -49,24 +50,24 @@ def upload_files(file_ext):
     return st.session_state.uploaded_files
 
 
-def remove_view(con, view_name):
+def remove_table(con, table_name):
     """
-    Safely removes a view from the DuckDB connection.
+    Safely removes a table from the DuckDB connection.
 
     Args:
         con (duckdb.Connection): The DuckDB connection object.
-        view_name (str): The name of the view to remove.
+        table_name (str): The name of the table to remove.
 
     Returns:
         None
 
     Notes:
-        - If the view does not exist or cannot be dropped, a warning is displayed.
+        - If the table does not exist or cannot be dropped, a warning is displayed.
     """
     try:
-        con.execute(f'DROP VIEW IF EXISTS "{view_name}"')
+        con.execute(f'DROP TABLE IF EXISTS "{table_name}"')
     except duckdb.CatalogException as e:
-        st.warning(f"Could not drop view {view_name}: {str(e)}")
+        st.warning(f"Could not drop table {table_name}: {str(e)}")
 
 
 def files_to_db(file_ext):
@@ -114,7 +115,7 @@ def files_to_db(file_ext):
                                     )
 
                                     file_options[extracted_file.name] = options
-                                    # Load tables and register views in DuckDB (if enabled)
+                                    # Load tables and materialize them in DuckDB (if enabled)
                                     if options.get('load', True):
                                         loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name, existing_names)
                                         if loaded_tables:
@@ -130,7 +131,7 @@ def files_to_db(file_ext):
                 # Get file options
                 options = get_file_options(file.name, None if file_extension != 'xlsx' else pd.ExcelFile(file).sheet_names)
 
-                # Load tables and register views in DuckDB (if enabled)
+                # Load tables and materialize them in DuckDB (if enabled)
                 file_options[file.name] = options
                 if options.get('load', True):
                     loaded_tables = files_to_table(file, st.session_state.con, options, existing_names=existing_names)
@@ -146,8 +147,9 @@ def files_to_db(file_ext):
     tables_to_remove = [table for table in list(st.session_state.tables.keys())
                         if table not in new_tables_list and table not in saved_tables]
     for table in tables_to_remove:
-        remove_view(st.session_state.con, table)
+        remove_table(st.session_state.con, table)
         del st.session_state.tables[table]
+        st.session_state.get('table_signatures', {}).pop(table, None)
 
     # Display success and warning messages
     if loaded_tab != "":
@@ -348,7 +350,8 @@ def files_to_table(file, con, options=None, archive_name=None, existing_names=No
                             candidates.append(f"{archive_base}_{file_base}_{sheet_name}")
                     resolved_name = resolve_unique_name(candidates, existing_names)
                 existing_names.add(resolved_name)
-                table_name = register_dataframe(con, df, resolved_name)
+                signature = table_signature(file, options, archive_name, sheet_name)
+                table_name = materialize_table(con, df, resolved_name, signature)
                 table_names.append(table_name)
         else:
             alias = options.get('alias', '').strip() if options else ''
@@ -369,7 +372,8 @@ def files_to_table(file, con, options=None, archive_name=None, existing_names=No
                     candidates.append(f"{archive_base}_{file_base}")
                 resolved_name = resolve_unique_name(candidates, existing_names)
             existing_names.add(resolved_name)
-            table_name = register_dataframe(con, df, resolved_name)
+            signature = table_signature(file, options, archive_name)
+            table_name = materialize_table(con, df, resolved_name, signature)
             table_names.append(table_name)
 
         return table_names
@@ -386,7 +390,10 @@ def files_to_table(file, con, options=None, archive_name=None, existing_names=No
 
 def register_dataframe(con, df, file_name):
     """
-    Register a DataFrame in the connection object.
+    Materialize a DataFrame as a writable base table in the connection.
+
+    The DataFrame is first exposed through a temporary view and then copied into
+    a real DuckDB table with CREATE TABLE ... AS SELECT.
 
     Args:
         con (Connection): The connection object to register the DataFrame.
@@ -394,13 +401,19 @@ def register_dataframe(con, df, file_name):
         file_name (str): The name of the file (used to generate the table name).
 
     Returns:
-        table_name(str): The name of the registered table.
+        table_name(str): The name of the created table.
     """
     # Clean table name
     table_name = clean_table_name(file_name)
 
-    # Register view in db
-    con.register(table_name, df)
+    # Expose the DataFrame through a temporary view, then materialize it as a base table
+    tmp_view = f"_src_{table_name}"
+    con.register(tmp_view, df)
+    try:
+        con.execute(f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM "{tmp_view}"')
+    finally:
+        con.unregister(tmp_view)
+
     return table_name
 
 
@@ -455,6 +468,96 @@ def resolve_unique_name(candidates, existing_names):
     return f"{base}_{i}"
 
 
+def table_exists(con, name):
+    """
+    Checks whether a base table with the given name exists in the connection.
+
+    Args:
+        con (Connection): The DuckDB connection object.
+        name (str): The table name to look up.
+
+    Returns:
+        bool: True if the table exists, False otherwise.
+    """
+    try:
+        row = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
+            [name],
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def table_signature(file, options, archive_name=None, sheet_name=None):
+    """
+    Builds a signature describing a source file and its load options.
+
+    The signature is used to decide whether a table must be rebuilt on rerun. It
+    combines the file identity (name, archive, size) with the options that affect
+    the resulting data, so that changing any load setting triggers a rebuild.
+
+    Args:
+        file: The uploaded file object.
+        options (dict): The load options collected for the file.
+        archive_name (str, optional): The zip archive name, if any.
+        sheet_name (str, optional): The sheet name for xlsx files.
+
+    Returns:
+        str: A stable JSON signature string.
+    """
+    size = getattr(file, 'size', None)
+    if size is None:
+        try:
+            size = len(file.getbuffer())
+        except Exception:
+            size = None
+    payload = {'file': file.name, 'archive': archive_name, 'size': size}
+    if sheet_name is not None:
+        sheet_opts = (options or {}).get('sheets', {}).get(sheet_name, {})
+        payload.update({
+            'sheet': sheet_name,
+            'header': sheet_opts.get('header', 0),
+            'alias': sheet_opts.get('alias', ''),
+        })
+    else:
+        opts = options or {}
+        payload.update({
+            'header': opts.get('header', 0),
+            'delimiter': opts.get('delimiter'),
+            'quoting': opts.get('quoting'),
+            'quotechar': opts.get('quotechar'),
+            'alias': opts.get('alias', ''),
+        })
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def materialize_table(con, df, table_name, signature):
+    """
+    Creates or preserves a base table for a loaded DataFrame.
+
+    If a table with the same name and an identical load signature already exists,
+    it is kept as-is otherwise the table is (re)created from the DataFrame 
+    to reflect new content or settings.
+
+    Args:
+        con (Connection): The DuckDB connection object.
+        df (pd.DataFrame): The DataFrame to materialize.
+        table_name (str): The resolved table name.
+        signature (str): Signature describing the source file and its load options.
+
+    Returns:
+        str: The table name.
+    """
+    signatures = st.session_state.setdefault('table_signatures', {})
+    # Preserve an existing table when nothing relevant changed
+    if signatures.get(table_name) == signature and table_exists(con, table_name):
+        return table_name
+    register_dataframe(con, df, table_name)
+    signatures[table_name] = signature
+    return table_name
+
+
 def get_preview_data(con, table_name, num_rows=5):
     """
     Get preview data for a given table.
@@ -496,7 +599,7 @@ def build_session_zip():
     Builds a ZIP archive containing one parquet file per session table.
 
     The archive is built entirely in memory (BytesIO): no data is ever written
-    to the server filesystem, respecting the application's data policy.
+    to the server filesystem.
     Each table is exported as "<table_name>.parquet" so that re-uploading the
     ZIP restores the session with the same table names.
 
@@ -752,7 +855,7 @@ def save_as_table():
     """
     Saves the current query result (export_df) as a new named table in the session.
 
-    The table is registered as a view in DuckDB and tracked in
+    The table is materialized as a base table in DuckDB and tracked in
     st.session_state.saved_tables so it survives reruns (it is excluded from the
     file-cleanup logic) and is included in the session export.
 
@@ -778,7 +881,7 @@ def save_as_table():
             if resolved_name in st.session_state.tables:
                 st.error(f"Table '{resolved_name}' already exists. Choose a different name.")
                 return
-            # Register a snapshot of the current result as a view in DuckDB
+            # Materialize a snapshot of the current result as a base table in DuckDB
             register_dataframe(st.session_state.con, st.session_state.export_df.copy(), resolved_name)
             st.session_state.tables[resolved_name] = "(saved table)"
             st.session_state.saved_tables.add(resolved_name)
@@ -934,6 +1037,8 @@ def main():
         st.session_state.query_statement = ''
     if 'saved_tables' not in st.session_state:
         st.session_state.saved_tables = set()
+    if 'table_signatures' not in st.session_state:
+        st.session_state.table_signatures = {}
 
     # Files upload
     upload_files(file_ext)
@@ -974,6 +1079,7 @@ def main():
         st.session_state.completions = []
         st.session_state.query_statement = ''
         st.session_state.saved_tables = set()
+        st.session_state.table_signatures = {}
 
 
 if __name__ == "__main__":
