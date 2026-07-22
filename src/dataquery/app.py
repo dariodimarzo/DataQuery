@@ -88,6 +88,9 @@ def files_to_db(file_ext):
     excluded_tab = ""
     file_options = {}
     new_tables_list = []
+    # Track names already in use (saved tables + names resolved during this run)
+    # so default names can be disambiguated across files and sheets.
+    existing_names = set(st.session_state.get('saved_tables', set()))
 
     for file in st.session_state.uploaded_files:
         if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
@@ -113,7 +116,7 @@ def files_to_db(file_ext):
                                     file_options[extracted_file.name] = options
                                     # Load tables and register views in DuckDB (if enabled)
                                     if options.get('load', True):
-                                        loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name)
+                                        loaded_tables = files_to_table(extracted_file, st.session_state.con, options, file.name, existing_names)
                                         if loaded_tables:
                                             for table in loaded_tables:
                                                 st.session_state.tables[table] = extracted_file.name
@@ -130,7 +133,7 @@ def files_to_db(file_ext):
                 # Load tables and register views in DuckDB (if enabled)
                 file_options[file.name] = options
                 if options.get('load', True):
-                    loaded_tables = files_to_table(file, st.session_state.con, options)
+                    loaded_tables = files_to_table(file, st.session_state.con, options, existing_names=existing_names)
                     if loaded_tables:
                         for table in loaded_tables:
                             st.session_state.tables[table] = file.name
@@ -184,30 +187,31 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
         )
         if file_extension == 'xlsx':
             selected_sheets = st.multiselect(
-                f"Sheets to load from {file_name}",
+                "Sheets to load",
                 sheet_names,
                 default=sheet_names,
                 key=f"sheets_{archive_name}_{file_name}",
             )
             options['selected_sheets'] = selected_sheets
-            left_column, right_column = st.columns(2)
             options['sheets'] = {}
-            for index, sheet in enumerate(selected_sheets):
-                with left_column if index % 2 == 0 else right_column:
-                    options['sheets'][sheet] = {
-                        'header': st.selectbox(
-                            f"Header for {file_name} - {sheet}",
-                            [0, None],
-                            format_func=lambda x: "Yes" if x == 0 else "No",
-                            key=f"header_{archive_name}_{file_name}_{sheet}",
-                        ),
-                        'alias': st.text_input(
-                            f"Table alias for {file_name} - {sheet}",
-                            value="",
-                            key=f"alias_{archive_name}_{file_name}_{sheet}",
-                            help="Leave empty to use default name",
-                        ),
-                    }
+            # One clear settings row per sheet: Header and Table alias side by side
+            for sheet in selected_sheets:
+                header_col, alias_col = st.columns(2)
+                with header_col:
+                    sheet_header = st.selectbox(
+                        f"Header - {sheet}",
+                        [0, None],
+                        format_func=lambda x: "Yes" if x == 0 else "No",
+                        key=f"header_{archive_name}_{file_name}_{sheet}",
+                    )
+                with alias_col:
+                    sheet_alias = st.text_input(
+                        f"Table alias - {sheet}",
+                        value="",
+                        key=f"alias_{archive_name}_{file_name}_{sheet}",
+                        help="Leave empty to use default name",
+                    )
+                options['sheets'][sheet] = {'header': sheet_header, 'alias': sheet_alias}
         else:
             if file_extension in ['csv', 'txt']:
                 left_column, right_column = st.columns(2)
@@ -233,7 +237,7 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
                     options['dtype'] = "str"
             
             options['alias'] = st.text_input(
-                f"Table alias for {file_name}",
+                "Table alias",
                 value="",
                 key=f"alias_{archive_name}_{file_name}",
                 help="Leave empty to use default name",
@@ -242,7 +246,7 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
     return options
 
 
-def files_to_table(file, con, options=None, archive_name=None):
+def files_to_table(file, con, options=None, archive_name=None, existing_names=None):
     """
     Get dataframe from file and register it in a database connection.
 
@@ -251,13 +255,19 @@ def files_to_table(file, con, options=None, archive_name=None):
         con: Database connection object.
         options: Dict of options for file loading.
         archive_name: Name of the zip archive.
+        existing_names: Set of table names already in use, used to avoid
+            collisions when generating default names. Mutated in place with the
+            names resolved for this file.
 
     Returns:
         table_names(List): List of table names where the data was registered, or None if there was an error.
     """
-    # Get file extension, file name, and archive name
+    # Get file extension and base names (without extension) used for default naming
     file_extension = file.name.split('.')[-1].lower()
-    file_nm = f"{archive_name.replace('.', '_')}_{file.name.replace('.', '_')}" if archive_name else file.name.replace('.', '_')
+    file_base = splitext(file.name)[0]
+    archive_base = splitext(archive_name)[0] if archive_name else None
+    if existing_names is None:
+        existing_names = set()
     table_names = []
 
     try:
@@ -312,29 +322,53 @@ def files_to_table(file, con, options=None, archive_name=None):
 
         # Register dataframes into DuckDB
         if file_extension == 'xlsx':
-            used_names = {}
+            single_sheet = len(dfs) == 1
             for sheet_name, df in dfs.items():
                 sheet_options = options.get('sheets', {}).get(sheet_name, {})
                 alias = sheet_options.get('alias', '').strip()
                 if alias:
+                    # Explicit alias: honour it as-is, but avoid silent collisions
                     resolved_name = clean_table_name(alias)
+                    if not resolved_name:
+                        st.error(f"Invalid alias for sheet \"{sheet_name}\". Skipping.")
+                        continue
+                    if resolved_name in existing_names:
+                        st.error(f"Duplicate alias: sheet \"{sheet_name}\" resolves to table "
+                                 f"\"{resolved_name}\", already in use. Skipping.")
+                        continue
                 else:
-                    resolved_name = clean_table_name(f"{file_nm}_{sheet_name.lower()}")
-                # Check for duplicate table names
-                if resolved_name in used_names:
-                    st.error(f"Duplicate alias: sheet \"{sheet_name}\" resolves to table \"{resolved_name}\", "
-                             f"already used by sheet \"{used_names[resolved_name]}\". Skipping.")
-                    continue
-                used_names[resolved_name] = sheet_name
+                    # Default name: shortest readable option, qualify only on conflict
+                    if single_sheet:
+                        candidates = [file_base]
+                        if archive_base:
+                            candidates.append(f"{archive_base}_{file_base}")
+                    else:
+                        candidates = [sheet_name, f"{file_base}_{sheet_name}"]
+                        if archive_base:
+                            candidates.append(f"{archive_base}_{file_base}_{sheet_name}")
+                    resolved_name = resolve_unique_name(candidates, existing_names)
+                existing_names.add(resolved_name)
                 table_name = register_dataframe(con, df, resolved_name)
                 table_names.append(table_name)
         else:
             alias = options.get('alias', '').strip() if options else ''
             if alias:
+                # Explicit alias: honour it as-is, but avoid silent collisions
                 resolved_name = clean_table_name(alias)
+                if not resolved_name:
+                    st.error(f"Invalid alias for {file.name}. Skipping.")
+                    return None
+                if resolved_name in existing_names:
+                    st.error(f"Duplicate alias: {file.name} resolves to table "
+                             f"\"{resolved_name}\", already in use. Skipping.")
+                    return None
             else:
-                resolved_name = clean_table_name(file_nm)
-                
+                # Default name: file name without extension, qualify only on conflict
+                candidates = [file_base]
+                if archive_base:
+                    candidates.append(f"{archive_base}_{file_base}")
+                resolved_name = resolve_unique_name(candidates, existing_names)
+            existing_names.add(resolved_name)
             table_name = register_dataframe(con, df, resolved_name)
             table_names.append(table_name)
 
@@ -387,6 +421,38 @@ def clean_table_name(name):
     name = sub(r'[^a-zA-Z0-9_]', '', name)
 
     return name
+
+
+def resolve_unique_name(candidates, existing_names):
+    """
+    Resolves a unique table name from an ordered list of candidate names.
+
+    Candidates must be ordered from the simplest/most readable to the most
+    qualified (e.g. sheet name, then file_sheet, then archive_file_sheet). The
+    first candidate that does not collide with an already-used name is returned.
+    If every candidate collides, a numeric suffix is appended to the most
+    qualified candidate until a free name is found.
+
+    Args:
+        candidates (list): Ordered candidate names (raw, not yet cleaned).
+        existing_names (set): Names already in use that must be avoided.
+
+    Returns:
+        str: A cleaned, unique table name.
+    """
+    cleaned_candidates = [c for c in (clean_table_name(x) for x in candidates) if c]
+    if not cleaned_candidates:
+        cleaned_candidates = ['table']
+    # Prefer the first candidate that is not already taken
+    for name in cleaned_candidates:
+        if name not in existing_names:
+            return name
+    # Every candidate collided: fall back to a numeric suffix on the most qualified one
+    base = cleaned_candidates[-1]
+    i = 2
+    while f"{base}_{i}" in existing_names:
+        i += 1
+    return f"{base}_{i}"
 
 
 def get_preview_data(con, table_name, num_rows=5):
