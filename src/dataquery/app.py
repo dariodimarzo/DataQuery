@@ -241,13 +241,15 @@ def get_file_options(file_name, sheet_names=None, archive_name=None):
                     )
                     options['quotechar'] = st.text_input(f"Quote character", '"', key=f"quote_{archive_name}_{file_name}")
                     options['dtype'] = "str"
-            
-            options['alias'] = st.text_input(
-                "Table alias",
-                value="",
-                key=f"alias_{archive_name}_{file_name}",
-                help="Leave empty to use default name",
-            )
+
+            alias_col,_ = st.columns(2)
+            with alias_col:
+                options['alias'] = st.text_input(
+                    "Table alias",
+                    value="",
+                    key=f"alias_{archive_name}_{file_name}",
+                    help="Leave empty to use default name"
+                )
             
     return options
 
@@ -690,7 +692,7 @@ def session_export():
     Returns:
         None
     """
-    with st.popover("Save Session"):
+    with st.popover("Save Session", use_container_width=True):
         st.caption(
             "Save all session tables as a ZIP of parquet files.  \n"
             "Re-upload the ZIP to restore the session."
@@ -749,7 +751,7 @@ def session_controls():
     """
     col_new, col_save, _ = st.columns([1, 1, 5])
     with col_new:
-        if st.button("New Session", help="Remove all objects and start from a clean session"):
+        if st.button("New Session", help="Remove all objects and start from a clean session", use_container_width=True):
             new_session()
     with col_save:
         session_export()
@@ -907,7 +909,7 @@ def data_download(file_ext):
         # Provide save of the current query result as a new session table
         save_as_table()
     with col2:
-        with st.popover("Data Download"):
+        with st.popover("Data Download", use_container_width=True):
             # File format selection
             file_formats = [item for item in file_ext if item != 'zip']
             selected_format = st.selectbox("Select file format:", file_formats)
@@ -971,7 +973,7 @@ def save_as_table():
     Returns:
         None
     """
-    with st.popover("Save as Table"):
+    with st.popover("Save as Table", use_container_width=True):
         st.caption("Save the current query result as a new session table.")
         new_name = st.text_input(
             "Table name",
