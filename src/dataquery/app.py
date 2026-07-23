@@ -31,6 +31,7 @@ def upload_files(file_ext):
         accept_multiple_files=True,
         help='Upload your data files and zip archives.  \nAll files from zip archives and all sheets of xlsx files will be considered.',
         type=file_ext,
+        key=f"uploader_{st.session_state.get('uploader_key', 0)}",
     )
 
     # Check for removed files
@@ -89,9 +90,10 @@ def files_to_db(file_ext):
     excluded_tab = ""
     file_options = {}
     new_tables_list = []
-    # Track names already in use (saved tables + names resolved during this run)
-    # so default names can be disambiguated across files and sheets.
-    existing_names = set(st.session_state.get('saved_tables', set()))
+    # Track names already in use (saved tables, SQL-created objects and names
+    # resolved during this run) so default names can be disambiguated across
+    # files and sheets.
+    existing_names = set(st.session_state.get('saved_tables', set())) | set(st.session_state.get('sql_objects', set()))
 
     for file in st.session_state.uploaded_files:
         if file.name not in [f.name for f in st.session_state.uploaded_files if f != file]:
@@ -144,8 +146,10 @@ def files_to_db(file_ext):
 
     # Cleanup obsolete tables (renamed aliases or unselected sheets)
     saved_tables = st.session_state.get('saved_tables', set())
+    sql_objects = st.session_state.get('sql_objects', set())
     tables_to_remove = [table for table in list(st.session_state.tables.keys())
-                        if table not in new_tables_list and table not in saved_tables]
+                        if table not in new_tables_list and table not in saved_tables
+                        and table not in sql_objects]
     for table in tables_to_remove:
         remove_table(st.session_state.con, table)
         del st.session_state.tables[table]
@@ -558,6 +562,53 @@ def materialize_table(con, df, table_name, signature):
     return table_name
 
 
+def sync_catalog(con):
+    """
+    Reconciles the app table catalog with the actual objects in DuckDB.
+
+    Reads base tables and views from DuckDB (schema 'main') and updates
+    st.session_state.tables so that objects created via SQL (CREATE TABLE/VIEW)
+    appear in the UI and objects dropped via SQL (DROP TABLE/VIEW) disappear from
+    it. Internal temporary views (prefixed with '_src_') are ignored. Objects
+    created via SQL are tracked in st.session_state.sql_objects so the file
+    loading cleanup does not remove them.
+
+    Args:
+        con (Connection): The DuckDB connection object.
+
+    Returns:
+        bool: True if the catalog changed, False otherwise.
+    """
+    st.session_state.setdefault('sql_objects', set())
+    try:
+        rows = con.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        ).fetchall()
+    except Exception:
+        return False
+
+    live = {name for (name,) in rows if not name.startswith('_src_')}
+    changed = False
+
+    # Add SQL-created objects not yet tracked by the app
+    for name in live:
+        if name not in st.session_state.tables:
+            st.session_state.tables[name] = "(sql)"
+            st.session_state.sql_objects.add(name)
+            changed = True
+
+    # Drop from the catalog objects that no longer exist in DuckDB
+    for name in list(st.session_state.tables.keys()):
+        if name not in live:
+            st.session_state.tables.pop(name, None)
+            st.session_state.saved_tables.discard(name)
+            st.session_state.sql_objects.discard(name)
+            st.session_state.get('table_signatures', {}).pop(name, None)
+            changed = True
+
+    return changed
+
+
 def get_preview_data(con, table_name, num_rows=5):
     """
     Get preview data for a given table.
@@ -657,6 +708,53 @@ def session_export():
             )
 
 
+def new_session():
+    """
+    Resets the whole session to a clean state.
+
+    Recreates the in-memory DuckDB connection (which drops every table and view
+    at once), clears all app catalogs and query state, and empties the file
+    uploader by bumping its dynamic key. Triggers a rerun so the UI refreshes.
+
+    Returns:
+        None
+    """
+    # Recreate the connection: this drops all tables/views held in memory
+    st.session_state.con = duckdb.connect(database=':memory:')
+    # Clear every catalog and query-related state
+    st.session_state.tables = {}
+    st.session_state.query_result = None
+    st.session_state.export_df = None
+    st.session_state.edited_df = None
+    st.session_state.completions = []
+    st.session_state.query_statement = ''
+    st.session_state.saved_tables = set()
+    st.session_state.table_signatures = {}
+    st.session_state.sql_objects = set()
+    st.session_state.uploaded_files = []
+    # Bump the uploader key so the file_uploader widget is emptied
+    st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+    st.rerun()
+
+
+def session_controls():
+    """
+    Renders the session action buttons (New Session and Save Session) on one row.
+
+    - New Session drops every table/view and clears the session for a clean start.
+    - Save Session downloads all session tables as an in-memory ZIP of parquet files.
+
+    Returns:
+        None
+    """
+    col_new, col_save, _ = st.columns([1, 1, 6])
+    with col_new:
+        if st.button("New Session", help="Remove all objects and start from a clean session"):
+            new_session()
+    with col_save:
+        session_export()
+
+
 def get_query():
     """
     Function to get user input for SQL query and execute it, with table/column suggestions.
@@ -702,9 +800,11 @@ def get_query():
         allow_reset=False
     )
 
-    # Get SQL query from code editor once sumitted
-    if sql_query_input["text"] != st.session_state.query_statement:
+    # Get SQL query from code editor once sumitted (only on an actual submit event,
+    # so the editor remounting on completions change does not wipe the result)
+    if sql_query_input.get("type") == "submit" and sql_query_input["text"] != st.session_state.query_statement:
         st.session_state.query_statement = sql_query_input["text"]
+        catalog_changed = False
 
         # Button to run query
         #if st.button("Run Query"):
@@ -714,6 +814,8 @@ def get_query():
                 st.session_state.query_result = None
                 st.session_state.edited_df = None
                 result_df = run_query(st.session_state.con, st.session_state.query_statement)
+                # Reflect any CREATE/DROP TABLE/VIEW issued via SQL in the UI catalog
+                catalog_changed = sync_catalog(st.session_state.con)
                 #check if query got result
                 if result_df is not None:
                     # Reset index to start from 1 for query results (empty range if no rows)
@@ -722,14 +824,21 @@ def get_query():
                     #st.success("Query executed successfully!")
             # Catch exception of wrong table name and update command
             except Exception as e:
-                if "Catalog Error: Table with name" in str(e):
+                err = str(e)
+                if "already exists" in err:
+                    st.error("Table/View already existing. Please choose a different name or use CREATE OR REPLACE.")
+                elif "Catalog Error: Table with name" in err and "does not exist" in err:
                     st.error("Table not existing. Please check table names in your query.")
-                elif "Can only update base table" in str(e):
+                elif "Can only update base table" in err:
                     st.error("Update not available. Please consider a different select statement and the edit mode.")
                 else:
                     st.error(f"Error executing query: {str(e)}")
         else:
             st.session_state.query_result = None
+
+        # Refresh the UI (preview, autocompletion, ...) when the catalog changed
+        if catalog_changed:
+            st.rerun()
         #:
         #    st.warning("Please enter a SQL query.")
 
@@ -1039,47 +1148,45 @@ def main():
         st.session_state.saved_tables = set()
     if 'table_signatures' not in st.session_state:
         st.session_state.table_signatures = {}
+    if 'sql_objects' not in st.session_state:
+        st.session_state.sql_objects = set()
+    if 'uploader_key' not in st.session_state:
+        st.session_state.uploader_key = 0
 
     # Files upload
     upload_files(file_ext)
 
-    # If files uploaded
-    if st.session_state.uploaded_files:
-        # Load files to db
-        files_to_db(file_ext)
+    # Reconcile the database with the current files: this loads newly uploaded
+    # files and, thanks to its cleanup step, drops tables of removed files even
+    # when no file is left (saved/SQL tables are preserved).
+    files_to_db(file_ext)
 
-        # If tables created
-        if st.session_state.tables:
-            # Persistently show tables saved from query results (like the loaded message)
-            saved_tabs = [t for t in st.session_state.tables if t in st.session_state.saved_tables]
-            if saved_tabs:
-                saved_list = ''.join([f'  \n- {t}' for t in saved_tabs])
-                st.success(f"Saved query result as table(s):{saved_list}")
-            # Display data preview for each table
-            data_preview(num_rows=num_rows)
-            # Provide session save (all tables, optional query result) as in-memory ZIP
-            session_export()
-            # Provide SQL query section
-            get_query()
+    # Show the working UI whenever there is at least one table (loaded from files,
+    # saved from results, or created via SQL). Use "New Session" for a clean start.
+    if st.session_state.tables:
+        # Persistently show tables saved from query results (like the loaded message)
+        saved_tabs = [t for t in st.session_state.tables if t in st.session_state.saved_tables]
+        if saved_tabs:
+            saved_list = ''.join([f'  \n- {t}' for t in saved_tabs])
+            st.success(f"Saved query result as table(s):{saved_list}")
+        # Persistently show tables/views created via SQL
+        sql_tabs = [t for t in st.session_state.tables if t in st.session_state.sql_objects]
+        if sql_tabs:
+            sql_list = ''.join([f'  \n- {t}' for t in sql_tabs])
+            st.success(f"Created table(s) via SQL:{sql_list}")
+        # Display data preview for each table
+        data_preview(num_rows=num_rows)
+        # Session controls: New Session + Save Session on the same row
+        session_controls()
+        # Provide SQL query section
+        get_query()
 
         # If query result
         if st.session_state.query_result is not None:
             # Display query result
             query_result()
-
             # Display data download section
             data_download(file_ext)
-    else:
-        # Reset session state variables
-        st.session_state.tables = {}
-        st.session_state.query_result = None
-        st.session_state.export_df = None
-        st.session_state.uploaded_files = []
-        st.session_state.edited_df = None
-        st.session_state.completions = []
-        st.session_state.query_statement = ''
-        st.session_state.saved_tables = set()
-        st.session_state.table_signatures = {}
 
 
 if __name__ == "__main__":
