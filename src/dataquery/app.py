@@ -747,7 +747,7 @@ def session_controls():
     Returns:
         None
     """
-    col_new, col_save, _ = st.columns([1, 1, 6])
+    col_new, col_save, _ = st.columns([1, 1, 5])
     with col_new:
         if st.button("New Session", help="Remove all objects and start from a clean session"):
             new_session()
