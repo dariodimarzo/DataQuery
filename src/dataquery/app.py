@@ -1,3 +1,5 @@
+from unicodedata import name
+
 import streamlit as st
 import pandas as pd
 import duckdb 
@@ -345,15 +347,7 @@ def files_to_table(file, con, options=None, archive_name=None, existing_names=No
                                  f"\"{resolved_name}\", already in use. Skipping.")
                         continue
                 else:
-                    # Default name: shortest readable option, qualify only on conflict
-                    if single_sheet:
-                        candidates = [file_base]
-                        if archive_base:
-                            candidates.append(f"{archive_base}_{file_base}")
-                    else:
-                        candidates = [sheet_name, f"{file_base}_{sheet_name}"]
-                        if archive_base:
-                            candidates.append(f"{archive_base}_{file_base}_{sheet_name}")
+                    candidates = sheet_name
                     resolved_name = resolve_unique_name(candidates, existing_names)
                 existing_names.add(resolved_name)
                 signature = table_signature(file, options, archive_name, sheet_name)
@@ -373,9 +367,7 @@ def files_to_table(file, con, options=None, archive_name=None, existing_names=No
                     return None
             else:
                 # Default name: file name without extension, qualify only on conflict
-                candidates = [file_base]
-                if archive_base:
-                    candidates.append(f"{archive_base}_{file_base}")
+                candidates = file_base
                 resolved_name = resolve_unique_name(candidates, existing_names)
             existing_names.add(resolved_name)
             signature = table_signature(file, options, archive_name)
@@ -444,34 +436,27 @@ def clean_table_name(name):
 
 def resolve_unique_name(candidates, existing_names):
     """
-    Resolves a unique table name from an ordered list of candidate names.
+    Resolves a unique table name.
 
-    Candidates must be ordered from the simplest/most readable to the most
-    qualified (e.g. sheet name, then file_sheet, then archive_file_sheet). The
-    first candidate that does not collide with an already-used name is returned.
-    If every candidate collides, a numeric suffix is appended to the most
-    qualified candidate until a free name is found.
+    If the candidate collides, a numeric suffix is appended until a free name is found.
 
     Args:
-        candidates (list): Ordered candidate names (raw, not yet cleaned).
+        candidates (str): Candidate names (raw, not yet cleaned).
         existing_names (set): Names already in use that must be avoided.
 
     Returns:
         str: A cleaned, unique table name.
     """
-    cleaned_candidates = [c for c in (clean_table_name(x) for x in candidates) if c]
+    cleaned_candidates = clean_table_name(candidates)
     if not cleaned_candidates:
         cleaned_candidates = ['table']
-    # Prefer the first candidate that is not already taken
-    for name in cleaned_candidates:
-        if name not in existing_names:
-            return name
-    # Every candidate collided: fall back to a numeric suffix on the most qualified one
-    base = cleaned_candidates[-1]
+    if cleaned_candidates not in existing_names:
+        return cleaned_candidates
+    # Every candidate collided: fall back to a numeric suffix 
     i = 2
-    while f"{base}_{i}" in existing_names:
+    while f"{cleaned_candidates}_{i}" in existing_names:
         i += 1
-    return f"{base}_{i}"
+    return f"{cleaned_candidates}_{i}"
 
 
 def table_exists(con, name):
@@ -806,7 +791,7 @@ def get_query():
 
     # Get SQL query from code editor once sumitted (only on an actual submit event,
     # so the editor remounting on completions change does not wipe the result)
-    if sql_query_input.get("type") == "submit" and sql_query_input["text"] != st.session_state.query_statement:
+    if sql_query_input.get("type") == "submit": #and sql_query_input["text"] != st.session_state.query_statement:
         st.session_state.query_statement = sql_query_input["text"]
         catalog_changed = False
 
@@ -830,7 +815,7 @@ def get_query():
             except Exception as e:
                 err = str(e)
                 if "already exists" in err:
-                    st.error("Table/View already existing. Please choose a different name or use CREATE OR REPLACE.")
+                    st.error("Object already existing. Please choose a different name or use CREATE OR REPLACE.")
                 elif "Catalog Error: Table with name" in err and "does not exist" in err:
                     st.error("Table not existing. Please check table names in your query.")
                 elif "Can only update base table" in err:
