@@ -642,7 +642,9 @@ def data_preview(num_rows=5):
         st.dataframe(preview_df): The preview of the selected table.
     """
     with st.expander("Data Preview", expanded=False):
-        tab_prev = st.selectbox('Select Table:', st.session_state.tables.keys())
+        dataprev_col,_ = st.columns(2)
+        with dataprev_col:
+            tab_prev = st.selectbox('Select Table:', st.session_state.tables.keys())
         preview_df = get_preview_data(st.session_state.con, tab_prev, num_rows)
         return st.dataframe(preview_df)
 
