@@ -791,7 +791,7 @@ def get_query():
 
     # Get SQL query from code editor once sumitted (only on an actual submit event,
     # so the editor remounting on completions change does not wipe the result)
-    if sql_query_input.get("type") == "submit": #and sql_query_input["text"] != st.session_state.query_statement:
+    if sql_query_input.get("type") == "submit" and sql_query_input["text"] != st.session_state.query_statement:
         st.session_state.query_statement = sql_query_input["text"]
         catalog_changed = False
 
