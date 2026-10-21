@@ -56,6 +56,26 @@ Or with Streamlit directly:
 streamlit run src/dataquery/app.py
 ```
 
+Or, without installing it, as a package with `python -m dataquery` — from the project folder with `src` on the Python path, or from inside `src`:
+
+```sh
+# Linux / macOS
+PYTHONPATH=src python -m dataquery
+```
+
+```powershell
+# Windows PowerShell
+$env:PYTHONPATH = "src"
+python -m dataquery
+```
+
+Or from inside `src`, with no `PYTHONPATH`: Python finds the package in the current folder.
+
+```sh
+cd src
+python -m dataquery
+```
+
 ## License
 
 This project is licensed under the GNU GPLv3 License. See the LICENSE file for details.
